@@ -89,16 +89,20 @@ class KassabonData:
             todo = [p for p in products.values() if p.key not in self.data["names"]]
             done = 0
             for product in todo:
+                if product.key in self.data["names"]:
+                    continue
                 try:
                     ranked = await self.async_find(product.name, product.latest.price)
                 except AhSearchError as err:
                     _LOGGER.warning("AH-productnamen opzoeken lukt nu niet: %s", err)
                     break
+                if product.key in self.data["names"]:
+                    continue  # chosen on the card while we were searching
                 auto = matching.pick_automatically(ranked)
                 if auto:
                     entry = {"status": "auto", "match": _strip(auto)}
-                elif ranked:
-                    entry = {"status": "pending", "candidates": [_strip(c) for c in ranked[:6]]}
+                elif useful := [c for c in ranked if c["score"] >= MIN_CANDIDATE_SCORE]:
+                    entry = {"status": "pending", "candidates": [_strip(c) for c in useful[:6]]}
                 else:
                     entry = {"status": "none"}
                 entry["checked"] = dt_util.utcnow().isoformat()
@@ -198,6 +202,9 @@ class KassabonData:
                 return False
             await self._async_save()
             return True
+
+
+MIN_CANDIDATE_SCORE = 40
 
 
 def _strip(product: dict[str, Any]) -> dict[str, Any]:

@@ -7,7 +7,7 @@
  *   limit: 10                       # rows before "Toon alles"
  */
 const DOMAIN = 'ah_kassabon';
-const VERSION = '0.2.0';
+const VERSION = '0.2.1';
 
 const CSS = `
 :host {
@@ -98,7 +98,7 @@ const nice = (name) => {
   const rest = (ah ? name.slice(3) : name).toLowerCase();
   return (ah ? 'AH ' : '') + rest.charAt(0).toUpperCase() + rest.slice(1);
 };
-const esc = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const needsCheck = (p) => p.match_status === 'pending' || p.match_status === 'none';
 const label = (p) => p.title || nice(p.name) + (p.variants > 1 ? ` · ${eur(p.first_price)}` : '');
 
@@ -237,7 +237,7 @@ class AhKassabonCard extends HTMLElement {
   }
 
   _candidate(c, key) {
-    return `<button class="match cand" data-pick="${esc(key)}" data-cand='${esc(JSON.stringify(c))}'>
+    return `<button class="match cand" data-pick="${esc(key)}" data-cand="${this._cands.push(c) - 1}">
       ${this._thumb(c.image)}
       <div class="n">${esc(c.title)}<small>${esc(c.size || '')}${c.size ? ' · ' : ''}${eur(c.price)}</small></div>
     </button>`;
@@ -272,6 +272,7 @@ class AhKassabonCard extends HTMLElement {
   }
 
   _render() {
+    this._cands = [];
     if (!this.shadowRoot || !this._config) return;
     const c = this._config;
     const data = this._data;
@@ -352,7 +353,7 @@ class AhKassabonCard extends HTMLElement {
     on('[data-change]', (b) => { this._picking = b.dataset.change; this._results = null; this._query = ''; this._render(); });
     on('[data-cancel]', () => { this._picking = null; this._results = null; this._render(); });
     on('[data-skip]', (b) => this._setProduct(b.dataset.skip, { status: 'skipped' }));
-    on('[data-pick]', (b) => this._setProduct(b.dataset.pick, { match: JSON.parse(b.dataset.cand) }));
+    on('[data-pick]', (b) => { const c = this._cands[Number(b.dataset.cand)]; if (c) this._setProduct(b.dataset.pick, { match: c }); });
     on('[data-merge]', (b) => this._setProduct(b.dataset.merge, { no_split: true }));
     on('[data-search]', (b) => {
       const q = root.querySelector(`input[data-q="${window.CSS.escape(b.dataset.search)}"]`);

@@ -90,9 +90,11 @@ def rank(short_name: str, target_price: float | None, candidates: list[dict[str,
     seen: set[Any] = set()
     ranked = []
     for cand in candidates:
-        if cand.get("id") in seen:
+        # AH sometimes lists the same product twice under two ids.
+        same = (cand.get("title", "").lower(), cand.get("size"), cand.get("price"))
+        if cand.get("id") in seen or same in seen:
             continue
-        seen.add(cand.get("id"))
+        seen.update((cand.get("id"), same))
         score = _name_score(short_name, cand.get("title", ""), cand.get("brand")) + _price_score(
             target_price, cand.get("price")
         )

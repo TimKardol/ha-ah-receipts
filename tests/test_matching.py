@@ -47,3 +47,12 @@ def test_product_from_search():
         "id": 42, "title": "AH Pesto", "brand": "AH", "size": "190 g", "price": 2.29, "image": "small",
     }
     assert matching.product_from_search({"webshopId": 1})["price"] is None
+
+
+def test_same_product_listed_twice_is_one():
+    ranked = matching.rank("AH STOKBROOD", 1.49, [
+        {"id": 1, "title": "AH Stokbrood wit", "brand": "AH", "size": "per stuk", "price": 1.49},
+        {"id": 2, "title": "AH Stokbrood wit", "brand": "AH", "size": "per stuk", "price": 1.49},
+        {"id": 3, "title": "AH Stokbrood volkoren", "brand": "AH", "size": "per stuk", "price": 1.49},
+    ])
+    assert [c["id"] for c in ranked] == [1, 3]
