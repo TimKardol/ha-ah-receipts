@@ -7,7 +7,7 @@
       },
       "reauth_confirm": {
         "title": "Log in to AH again",
-        "description": "The AH login has expired.\n\n1. Open [the AH login page]({url}) on a computer, in Chrome or Edge.\n2. Press F12, open the **Console** tab, and log in with your AH account.\n3. After logging in, the page tries to open the AH app. The console then shows an error with a link that starts with `appie://login-exit?code=`. Copy that whole link (or just the code) and paste it below. The code only works for a few minutes.\n\nHome Assistant then fetches the account's receipts (last 12 months, then every 6 hours) and knows the exact product on every line. It never sees your password; it keeps a login token, which **Log out** removes.",
+        "description": "The AH login has expired.\n\n1. Open [the AH login page]({url}) on a computer. If the link does not open, copy this address into the address bar:\n\n`{url}`\n\n2. Press F12 (Safari: Develop → Show Web Inspector), open the **Console** tab, and log in with your AH account.\n3. After logging in, the page tries to open the AH app. The console or Network tab (tick **Preserve log**) then shows a link with `code=` in it, usually starting with `appie://login-exit?code=`. Copy that whole link (or just the code) and paste it below. The code only works for a few minutes.\n\nHome Assistant then fetches the account's receipts (last 12 months, then every 6 hours) and knows the exact product on every line. It never sees your password; it keeps a login token, which **Log out** removes.",
         "data": {
           "code": "Link or code"
         }
@@ -86,7 +86,7 @@
       },
       "login": {
         "title": "Log in to AH (optional)",
-        "description": "1. Open [the AH login page]({url}) on a computer, in Chrome or Edge.\n2. Press F12, open the **Console** tab, and log in with your AH account.\n3. After logging in, the page tries to open the AH app. The console then shows an error with a link that starts with `appie://login-exit?code=`. Copy that whole link (or just the code) and paste it below. The code only works for a few minutes.\n\nHome Assistant then fetches the account's receipts (last 12 months, then every 6 hours) and knows the exact product on every line. It never sees your password; it keeps a login token, which **Log out** removes.",
+        "description": "1. Open [the AH login page]({url}) on a computer. If the link does not open, copy this address into the address bar:\n\n`{url}`\n\n2. Press F12 (Safari: Develop → Show Web Inspector), open the **Console** tab, and log in with your AH account.\n3. After logging in, the page tries to open the AH app. The console or Network tab (tick **Preserve log**) then shows a link with `code=` in it, usually starting with `appie://login-exit?code=`. Copy that whole link (or just the code) and paste it below. The code only works for a few minutes.\n\nHome Assistant then fetches the account's receipts (last 12 months, then every 6 hours) and knows the exact product on every line. It never sees your password; it keeps a login token, which **Log out** removes.",
         "data": {
           "code": "Link or code"
         }

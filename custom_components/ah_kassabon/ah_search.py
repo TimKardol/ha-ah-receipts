@@ -14,7 +14,7 @@ from collections.abc import Callable
 import logging
 import time
 from typing import Any
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import parse_qs, urlencode, urlparse
 
 import aiohttp
 
@@ -34,8 +34,8 @@ HEADERS = {
     "Content-Type": "application/json",
 }
 TIMEOUT = aiohttp.ClientTimeout(total=30)
-LOGIN_URL = (
-    f"https://login.ah.nl/login?client_id={CLIENT_ID}&response_type=code&redirect_uri=appie://login-exit"
+LOGIN_URL = "https://login.ah.nl/login?" + urlencode(
+    {"client_id": CLIENT_ID, "response_type": "code", "redirect_uri": "appie://login-exit"}
 )
 
 
@@ -161,6 +161,9 @@ async def async_exchange_code(session: aiohttp.ClientSession, code: str) -> dict
             timeout=TIMEOUT,
         ) as resp:
             if resp.status in (400, 401, 403):
+                _LOGGER.warning(
+                    "AH weigerde de inlogcode: status %s, antwoord: %s", resp.status, (await resp.text())[:300]
+                )
                 raise AhAuthError("AH accepteerde de code niet (verlopen of al gebruikt?)")
             if resp.status != 200:
                 raise AhSearchError(f"AH gaf status {resp.status} bij inloggen")

@@ -7,7 +7,7 @@
       },
       "reauth_confirm": {
         "title": "Opnieuw inloggen bij AH",
-        "description": "De AH-login is verlopen.\n\n1. Open [de inlogpagina van AH]({url}) op een computer, in Chrome of Edge.\n2. Druk op F12, open het tabblad **Console** en log in met je AH-account.\n3. Na het inloggen probeert de pagina de AH-app te openen. In de console staat dan een foutmelding met een link die begint met `appie://login-exit?code=`. Kopieer die hele link (of alleen de code) en plak hem hieronder. De code werkt maar een paar minuten.\n\nHome Assistant haalt daarna de bonnen uit het account op (laatste 12 maanden, daarna elke 6 uur) en weet per regel precies welk product het is. Je wachtwoord ziet Home Assistant nooit; het bewaart een login-token, dat **Uitloggen** weer verwijdert.",
+        "description": "De AH-login is verlopen.\n\n1. Open [de inlogpagina van AH]({url}) op een computer. Opent de link niet goed, kopieer dan dit adres naar de adresbalk:\n\n`{url}`\n\n2. Druk op F12 (Safari: Ontwikkel → Toon webinspecteur), open het tabblad **Console** en log in met je AH-account.\n3. Na het inloggen probeert de pagina de AH-app te openen. In de console of het tabblad Netwerk (vink **Log behouden / Preserve log** aan) staat dan een link met `code=` erin, meestal beginnend met `appie://login-exit?code=`. Kopieer die hele link (of alleen de code) en plak hem hieronder. De code werkt maar een paar minuten.\n\nHome Assistant haalt daarna de bonnen uit het account op (laatste 12 maanden, daarna elke 6 uur) en weet per regel precies welk product het is. Je wachtwoord ziet Home Assistant nooit; het bewaart een login-token, dat **Uitloggen** weer verwijdert.",
         "data": {
           "code": "Link of code"
         }
@@ -86,7 +86,7 @@
       },
       "login": {
         "title": "Inloggen bij AH (optioneel)",
-        "description": "1. Open [de inlogpagina van AH]({url}) op een computer, in Chrome of Edge.\n2. Druk op F12, open het tabblad **Console** en log in met je AH-account.\n3. Na het inloggen probeert de pagina de AH-app te openen. In de console staat dan een foutmelding met een link die begint met `appie://login-exit?code=`. Kopieer die hele link (of alleen de code) en plak hem hieronder. De code werkt maar een paar minuten.\n\nHome Assistant haalt daarna de bonnen uit het account op (laatste 12 maanden, daarna elke 6 uur) en weet per regel precies welk product het is. Je wachtwoord ziet Home Assistant nooit; het bewaart een login-token, dat **Uitloggen** weer verwijdert.",
+        "description": "1. Open [de inlogpagina van AH]({url}) op een computer. Opent de link niet goed, kopieer dan dit adres naar de adresbalk:\n\n`{url}`\n\n2. Druk op F12 (Safari: Ontwikkel → Toon webinspecteur), open het tabblad **Console** en log in met je AH-account.\n3. Na het inloggen probeert de pagina de AH-app te openen. In de console of het tabblad Netwerk (vink **Log behouden / Preserve log** aan) staat dan een link met `code=` erin, meestal beginnend met `appie://login-exit?code=`. Kopieer die hele link (of alleen de code) en plak hem hieronder. De code werkt maar een paar minuten.\n\nHome Assistant haalt daarna de bonnen uit het account op (laatste 12 maanden, daarna elke 6 uur) en weet per regel precies welk product het is. Je wachtwoord ziet Home Assistant nooit; het bewaart een login-token, dat **Uitloggen** weer verwijdert.",
         "data": {
           "code": "Link of code"
         }
