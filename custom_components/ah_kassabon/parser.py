@@ -21,12 +21,17 @@ import io
 import re
 
 _ITEM_RE = re.compile(
-    r"^\s*(?P<qty>\d+)\s+(?P<name>\S.*?)\s+(?P<a>\d+,\d\d)"
-    r"(?:\s+(?P<b>\d+,\d\d))?\s*(?P<flag>B+)?\s*$"
+    r"^\s*(?P<qty>\d+(?:[.,]\d+)?)(?P<kg>KG)?\s+(?P<name>\S.*?)\s+(?P<a>\d+,\d\d)"
+    r"(?:\s+(?P<b>\d+,\d\d))?\s*(?P<flag>B+|\d+%)?\s*$",
+    re.IGNORECASE,
 )
-_WHEN_RE = re.compile(r"(\d{1,2}):(\d{2})\s+(\d{1,2})-(\d{1,2})-(\d{4})")
+# Card payments print a full timestamp: "PAYMENT   Date   03/10/2026 12:01".
+_PAYMENT_WHEN_RE = re.compile(r"Date\s+(\d{1,2})/(\d{1,2})/(\d{4})\s+(\d{1,2}):(\d{2})")
+# The footer line "13:47   13-9-2026"; its time is sometimes cut short ("12:1").
+_WHEN_RE = re.compile(r"(\d{1,2}):(\d{1,2})\s+(\d{1,2})-(\d{1,2})-(\d{4})")
 _TOTAL_RE = re.compile(r"^\s*TOTAAL\s+(-?\d+,\d\d)\s*$", re.MULTILINE)
 _STORE_RE = re.compile(r"^\s*(\d{3,5})\s*$", re.MULTILINE)
+_COUNT_RE = re.compile(r"^\s*(\d+)\s+SUBTOTAAL", re.MULTILINE)
 
 
 class ReceiptParseError(ValueError):
@@ -39,6 +44,7 @@ class ReceiptItem:
     qty: int
     unit: float
     bonus: bool
+    per_kg: bool = False
 
 
 @dataclass
@@ -47,6 +53,14 @@ class Receipt:
     store: str | None
     total: float | None
     items: list[ReceiptItem] = field(default_factory=list)
+    printed_count: int | None = None  # item count AH prints next to SUBTOTAAL
+
+    @property
+    def missing_items(self) -> int:
+        """Items AH counted that the reader did not pick up (0 when all read)."""
+        if self.printed_count is None:
+            return 0
+        return max(0, self.printed_count - sum(i.qty for i in self.items))
 
     @property
     def receipt_id(self) -> str:
@@ -93,34 +107,54 @@ def parse_text(text: str) -> Receipt:
         match = _ITEM_RE.match(line)
         if not match:
             continue  # e.g. +STATIEGELD (deposit) lines
-        qty = int(match["qty"])
-        if qty <= 0:
-            continue
         first = _num(match["a"])
-        unit = first if match["b"] else first / qty
+        if match["kg"]:
+            # "0.350KG  BANANEN  1,89  0,66": price per kg, then the amount.
+            if not match["b"]:
+                continue
+            qty, unit, per_kg = 1, first, True
+        else:
+            if not match["qty"].isdigit() or int(match["qty"]) <= 0:
+                continue
+            qty = int(match["qty"])
+            unit = first if match["b"] else first / qty
+            per_kg = False
         items.append(
             ReceiptItem(
                 name=" ".join(match["name"].split()).upper(),
                 qty=qty,
                 unit=round(unit, 2),
                 bonus=bool(match["flag"]),
+                per_kg=per_kg,
             )
         )
 
-    when_matches = _WHEN_RE.findall(text)
-    if not when_matches or not seen_subtotal or not items:
+    if not seen_subtotal or not items:
         raise ReceiptParseError("Dit lijkt geen AH-kassabon te zijn")
-    hh, mm, day, month, year = (int(x) for x in when_matches[-1])
-    when = datetime(year, month, day, hh, mm)
+    when = _receipt_time(text)
+    if when is None:
+        raise ReceiptParseError("Datum en tijd niet gevonden op de kassabon")
 
     total_match = _TOTAL_RE.search(text)
     store_match = _STORE_RE.search(text)
+    count_match = _COUNT_RE.search(text)
     return Receipt(
         when=when,
         store=store_match.group(1) if store_match else None,
         total=_num(total_match.group(1)) if total_match else None,
         items=items,
+        printed_count=int(count_match.group(1)) if count_match else None,
     )
+
+
+def _receipt_time(text: str) -> datetime | None:
+    if payment := _PAYMENT_WHEN_RE.search(text):
+        day, month, year, hh, mm = (int(x) for x in payment.groups())
+        return datetime(year, month, day, hh, mm)
+    if footer := _WHEN_RE.findall(text):
+        hh, mm, day, month, year = (int(x) for x in footer[-1])
+        return datetime(year, month, day, hh, mm)
+    return None
 
 
 def parse_pdf(data: bytes) -> Receipt:

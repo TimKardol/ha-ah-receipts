@@ -7,7 +7,7 @@
  *   limit: 10                       # rows before "Toon alles"
  */
 const DOMAIN = 'ah_kassabon';
-const VERSION = '0.1.0';
+const VERSION = '0.1.1';
 
 const CSS = `
 :host {
@@ -70,6 +70,7 @@ input[type=file] { display: none; }
 `;
 
 const eur = (v) => (v == null ? '–' : '€' + v.toFixed(2).replace('.', ','));
+const eurP = (p, v) => eur(v) + (p.per_kg ? '/kg' : '');
 const signedEur = (v) => (v > 0 ? '+' : v < 0 ? '−' : '') + eur(Math.abs(v));
 const pct = (v) => (v == null ? '–' : (v > 0 ? '+' : v < 0 ? '−' : '') + Math.abs(v).toFixed(1).replace('.', ',') + '%');
 const day = (iso) => (iso ? new Date(iso).toLocaleDateString('nl-NL', { day: 'numeric', month: 'short' }).replace('.', '') : '');
@@ -140,11 +141,13 @@ class AhKassabonCard extends HTMLElement {
       if (r.duplicate) return `Bon van <b>${when}</b> stond er al in.`;
       const up = r.increases.length, down = r.decreases.length;
       let s = `Bon van <b>${when}</b> ingelezen (${r.items} producten). `;
-      if (!r.compared) return s + 'Nog niks om mee te vergelijken; dat komt bij de volgende bon.';
+      if (!r.compared) return s + 'Nog niks om mee te vergelijken; dat komt bij de volgende bon.' + (r.missing_items ? ` <span class="up">Let op: ${r.missing_items} product${r.missing_items === 1 ? '' : 'en'} niet herkend.</span>` : '');
       s += up ? `<span class="up"><b>${up} duurder</b></span>` : 'Niks duurder';
       if (down) s += `, <span class="down">${down} goedkoper</span>`;
       if (up) s += ': ' + r.increases.slice(0, 3).map((c) => `${esc(nice(c.product))} ${signedEur(c.diff)}`).join(', ') + (up > 3 ? ' …' : '');
-      return s + '.';
+      s += '.';
+      if (r.missing_items) s += ` <span class="up">Let op: ${r.missing_items} product${r.missing_items === 1 ? '' : 'en'} niet herkend.</span>`;
+      return s;
     });
     return { err: results.every((r) => !r.ok), html: parts.join('<br>') };
   }
@@ -205,12 +208,12 @@ class AhKassabonCard extends HTMLElement {
     else list = rows.slice(0, limit).map((p) => {
       const cls = p.variable ? '' : p.diff > 0 ? 'up' : p.diff < 0 ? 'down' : '';
       const meta = p.variable
-        ? `${eur(p.price)} · ${p.times}× gekocht`
+        ? `${eurP(p, p.price)} · ${p.times}× gekocht`
         : p.times < 2
-          ? `${eur(p.price)} · 1× gekocht`
+          ? `${eurP(p, p.price)} · 1× gekocht`
           : p.diff
-            ? `${eur(p.first_price)} → ${eur(p.price)} · sinds ${day(p.first_when)} · ${p.times}×`
-            : `${eur(p.price)} · ${p.times}× gekocht`;
+            ? `${eur(p.first_price)} → ${eurP(p, p.price)} · sinds ${day(p.first_when)} · ${p.times}×`
+            : `${eurP(p, p.price)} · ${p.times}× gekocht`;
       const open = this._open === p.name;
       return `<div class="row" data-name="${esc(p.name)}">
           <div class="n"><div class="name">${esc(nice(p.name))}</div><div class="meta">${meta}</div></div>

@@ -37,6 +37,7 @@ class Product:
     observations: list[Observation] = field(default_factory=list)
     variable_auto: bool = False
     variable_override: bool | None = None
+    per_kg: bool = False
 
     @property
     def variable(self) -> bool:
@@ -68,6 +69,7 @@ class Product:
             "name": self.name,
             "variable": self.variable,
             "variable_auto": self.variable_auto,
+            "per_kg": self.per_kg,
             "times": len(self.observations),
             "quantity": sum(o.qty for o in self.observations),
             "first_price": first.price,
@@ -113,6 +115,8 @@ def build_products(data: dict[str, Any]) -> dict[str, Product]:
         for name, lines in per_name.items():
             product = products.setdefault(name, Product(name))
             units = [line["unit"] for line in lines]
+            if any(line.get("per_kg") for line in lines):
+                product.per_kg = True
             if len(set(units)) > 1:
                 # Same product, different prices on one receipt: sold by weight.
                 product.variable_auto = True

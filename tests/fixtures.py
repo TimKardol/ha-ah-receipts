@@ -38,3 +38,23 @@ def later_receipt(day: int, changes: dict[str, str]) -> str:
     for old, new in changes.items():
         text = text.replace(old, new)
     return text
+
+
+# Card payment: weighed product (per kg), a percentage discount glued to the
+# amount, and a footer time cut short; the PAYMENT line has the full time.
+RECEIPT_CARD = """
+                           1234
+AANTAL        OMSCHRIJVING                    PRIJS   BEDRAG
+              BONUSKAART                               xx0000
+0.350KG       BANANEN                           1,89      0,66
+1             AH APPELTAART                             6,4925%
+2             AH YOGHURT                       1,29      2,58BB
+1             AH BROCCOLI                                 1,49  B
+5                 SUBTOTAAL                                       11,22
+25% K             AH APPELTAART                                    -1,62
+TOTAAL                                                           9,60
+PAYMENT                              Date                14/02/2026 09:05
+BTW                             OVER                             EUR
+1234                            12                                 34
+9:0                                                      14-2-2026
+"""

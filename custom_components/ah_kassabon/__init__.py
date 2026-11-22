@@ -76,13 +76,26 @@ class KassabonData:
                     "total": receipt.total,
                     "imported": dt_util.utcnow().isoformat(),
                     "items": [
-                        {"name": i.name, "qty": i.qty, "unit": i.unit, "bonus": i.bonus}
+                        {"name": i.name, "qty": i.qty, "unit": i.unit, "bonus": i.bonus, "per_kg": i.per_kg}
                         for i in receipt.items
                     ],
                 }
                 await self._async_save()
             result = prices.compare_receipt(self.data, rid)
-        result.update({"ok": True, "file": filename, "duplicate": duplicate})
+        result.update(
+            {
+                "ok": True,
+                "file": filename,
+                "duplicate": duplicate,
+                "missing_items": receipt.missing_items,
+            }
+        )
+        if receipt.missing_items:
+            _LOGGER.warning(
+                "Kassabon %s: %s product(en) niet herkend; stuur de PDF mee in een issue",
+                rid,
+                receipt.missing_items,
+            )
         if not duplicate:
             self.hass.bus.async_fire(EVENT_IMPORTED, result)
         return result

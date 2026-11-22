@@ -6,7 +6,7 @@ import pytest
 
 from custom_components.ah_kassabon import parser, prices
 
-from .fixtures import RECEIPT_JAN, later_receipt
+from .fixtures import RECEIPT_CARD, RECEIPT_JAN, later_receipt
 
 
 def _store(*texts):
@@ -62,3 +62,23 @@ def test_streak_marks_variable_and_override_wins():
     assert prices.build_products(data)["AH RUNDERGEH"].variable
     data["overrides"]["AH RUNDERGEH"] = {"variable": False}
     assert not prices.build_products(data)["AH RUNDERGEH"].variable
+
+
+def test_card_receipt_weighed_discount_and_time():
+    r = parser.parse_text(RECEIPT_CARD)
+    assert r.when == datetime(2026, 2, 14, 9, 5)  # from the PAYMENT line, not "9:0"
+    assert r.missing_items == 0 and r.printed_count == 5
+    by = {i.name: i for i in r.items}
+    assert by["BANANEN"].per_kg and by["BANANEN"].unit == 1.89 and by["BANANEN"].qty == 1
+    assert by["AH APPELTAART"].unit == 6.49 and by["AH APPELTAART"].bonus
+    assert by["AH YOGHURT"].unit == 1.29 and by["AH YOGHURT"].qty == 2
+
+
+def test_missing_items_reported():
+    text = RECEIPT_CARD.replace("1             AH BROCCOLI                                 1,49  B",
+                                "1             AH BROCCOLI                                 ??")
+    assert parser.parse_text(text).missing_items == 1
+
+
+def test_footer_time_when_no_card_payment():
+    assert parser.parse_text(RECEIPT_JAN).when == datetime(2026, 1, 31, 10, 15)
