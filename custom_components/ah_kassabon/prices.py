@@ -87,6 +87,7 @@ class Product:
             "size": match.get("size"),
             "image": match.get("image"),
             "product_id": match.get("id"),
+            "ah_id": next((o.pid for o in reversed(self.observations) if o.pid), None),
             "match_status": self.info.get("status", "new"),
             "candidates": self.info.get("candidates", []) if self.info.get("status") == "pending" else [],
             "variable": self.variable,

@@ -312,10 +312,12 @@ class KassabonData:
                 chosen = (entry.get("match") or {}).get("id")
                 if not chosen or key not in wanted or wanted[key] == chosen:
                     continue
-                names.pop(key)
                 target = by_pid.get(chosen)
-                if entry.get("status") == "confirmed" and target and names.get(target, {}).get("status") != "confirmed":
-                    names[target] = entry
+                if entry.get("status") != "confirmed":
+                    names.pop(key)  # looked up automatically: redo it
+                elif target and target != key and names.get(target, {}).get("status") != "confirmed":
+                    names[target] = names.pop(key)  # the person's choice follows its product
+                # Otherwise the person's choice stays where it is.
         todo = {
             key: pid
             for key, pid in wanted.items()
@@ -329,6 +331,19 @@ class KassabonData:
         except AhSearchError as err:
             _LOGGER.warning("AH-productgegevens ophalen lukt nu niet: %s", err)
             return 0
+        # Products AH no longer lists in search: ask for them by id.
+        if self.account is not None:
+            for pid in sorted(set(todo.values()) - set(info))[:100]:
+                try:
+                    found = await self.account.product(pid)
+                except AhAuthError:
+                    break
+                except AhSearchError as err:
+                    _LOGGER.debug("Product %s niet gevonden: %s", pid, err)
+                    continue
+                if found:
+                    info[pid] = found
+                await asyncio.sleep(0.2)
         count = 0
         async with self._lock:
             for key, pid in todo.items():

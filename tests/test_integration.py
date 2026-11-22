@@ -317,3 +317,45 @@ async def test_reauth_with_new_code(hass, aioclient_mock):
     flow = await hass.config_entries.flow.async_configure(flow["flow_id"], {"code": "NEW"})
     assert flow["type"] == "abort" and flow["reason"] == "reauth_successful"
     assert entry.data["account"]["access_token"] == "a3"
+
+
+async def test_account_names_keep_choices_and_use_product_fallback(hass):
+    """A chosen name survives; products missing from search are fetched by id."""
+    from custom_components.ah_kassabon import ah_search
+    await async_setup_component(hass, "http", {})
+    entry = MockConfigEntry(domain="ah_kassabon", title="AH Kassabon", data={"account": TOKENS})
+    entry.add_to_hass(hass)
+
+    async def products_by_ids(self, ids):
+        return {}  # neither product is listed in search any more
+
+    async def product(self, pid):
+        return {"id": pid, "title": f"Product {pid}", "brand": "AH", "size": "100 g", "price": 1.0, "image": None}
+
+    with patch.object(ah_search.AhSearch, "products_by_ids", products_by_ids), \
+         patch.object(ah_search.AhAccount, "product", product), \
+         patch("custom_components.ah_kassabon.KassabonData.schedule_sync"):
+        assert await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+        kassabon = entry.runtime_data
+        line = lambda name, unit, pid: ({"name": name, "qty": 1, "unit": unit, "bonus": False}, {"name": name, "price": unit, "id": pid})
+        a, b = line("AH AIOLI", 2.29, 11), line("AH DIP", 1.49, 12)
+        kassabon.data["receipts"]["r1"] = {"when": "2026-03-01T10:00:00", "items": [a[0], b[0]], "ids": [a[1], b[1]]}
+        kassabon.data["names"]["AH AIOLI"] = {"status": "confirmed", "match": {"id": 99, "title": "Chosen aioli"}}
+        kassabon.data["names"]["AH DIP"] = {"status": "pending", "candidates": []}
+        assert await kassabon._async_apply_account_ids() == 1
+        assert kassabon.data["names"]["AH AIOLI"]["match"]["title"] == "Chosen aioli"
+        assert kassabon.data["names"]["AH DIP"] == {"status": "account", "match": {
+            "id": 12, "title": "Product 12", "brand": "AH", "size": "100 g", "price": 1.0, "image": None, "score": None}}
+
+
+async def test_account_product_details(hass, aioclient_mock):
+    from homeassistant.helpers.aiohttp_client import async_get_clientsession
+    from custom_components.ah_kassabon.ah_search import AhAccount
+    aioclient_mock.post("https://api.ah.nl/graphql", json={"data": {"product": {
+        "id": 5, "title": "AH Aioli", "brand": "AH", "salesUnitSize": "175 g",
+        "priceV2": {"now": {"amount": 1.99}, "was": {"amount": 0}},
+        "imagePack": [{"small": {"url": "https://img/small", "width": 48, "height": 48}}]}}})
+    account = AhAccount(async_get_clientsession(hass), TOKENS, lambda t: None)
+    assert await account.product(5) == {
+        "id": 5, "title": "AH Aioli", "brand": "AH", "size": "175 g", "price": 1.99, "image": "https://img/small"}

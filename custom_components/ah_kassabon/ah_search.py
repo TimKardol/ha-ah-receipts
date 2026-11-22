@@ -188,6 +188,14 @@ RECEIPT_QUERY = """query FetchReceipt($id: String!) {
   }
 }"""
 
+PRODUCT_QUERY = """query FetchProductDetails($productId: Int!) {
+  product(id: $productId) {
+    id title brand salesUnitSize
+    priceV2 { now { amount } was { amount } }
+    imagePack { small { url width height } medium { url width height } }
+  }
+}"""
+
 RECEIPT_PDF_QUERY = """query FetchPosReceiptPdf($id: String!) {
   posReceiptPdf(id: $id) { pdfBase64 }
 }"""
@@ -292,6 +300,34 @@ class AhAccount:
         if not pdf:
             raise AhSearchError("AH gaf geen PDF voor deze bon")
         return base64.b64decode(pdf)
+
+    async def product(self, product_id: int) -> dict[str, Any] | None:
+        """One webshop product by id, also for products search no longer lists."""
+        data = await self.graphql(PRODUCT_QUERY, {"productId": int(product_id)})
+        raw = data.get("product")
+        if not raw or not raw.get("title"):
+            return None
+        price = raw.get("priceV2") or {}
+        regular = (price.get("was") or {}).get("amount") or (price.get("now") or {}).get("amount")
+        image = None
+        packs = raw.get("imagePack") or []
+        if isinstance(packs, dict):
+            packs = [packs]
+        for pack in packs:
+            for size in ("small", "medium", "large"):
+                if (pack or {}).get(size, {}) and pack[size].get("url"):
+                    image = pack[size]["url"]
+                    break
+            if image:
+                break
+        return {
+            "id": raw.get("id") or product_id,
+            "title": raw.get("title"),
+            "brand": raw.get("brand"),
+            "size": raw.get("salesUnitSize"),
+            "price": float(regular) if regular else None,
+            "image": image,
+        }
 
     async def webshop_ids(self, pos_ids: list[int]) -> dict[int, int]:
         """Map receipt product ids to webshop product ids (one request)."""
