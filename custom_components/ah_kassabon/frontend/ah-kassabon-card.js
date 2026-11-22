@@ -7,7 +7,7 @@
  *   limit: 10                       # rows before "Toon alles"
  */
 const DOMAIN = 'ah_kassabon';
-const VERSION = '0.3.2';
+const VERSION = '0.4.0';
 
 const CSS = `
 :host {

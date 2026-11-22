@@ -93,6 +93,9 @@ class KassabonData:
         return matching.rank(short_name, target, found)
 
     async def async_lookup_missing(self) -> None:
+        if any(r.get("ids") for r in self.data["receipts"].values()):
+            await self._async_apply_account_ids()
+            await self._async_save()
         async with self._lookup_lock:
             products = prices.build_products(self.data)
             todo = [p for p in products.values() if p.key not in self.data["names"]]
@@ -300,6 +303,19 @@ class KassabonData:
         products = prices.build_products(self.data)
         wanted = matching.account_ids(products, self.data["receipts"])
         names = self.data["names"]
+        # Keys are positions (NAME, NAME#2 ...). When products sharing a short
+        # name get split differently, move each chosen name to the key that now
+        # holds that AH product, and drop names that no longer fit their key.
+        by_pid = {pid: key for key, pid in wanted.items()}
+        async with self._lock:
+            for key, entry in list(names.items()):
+                chosen = (entry.get("match") or {}).get("id")
+                if not chosen or key not in wanted or wanted[key] == chosen:
+                    continue
+                names.pop(key)
+                target = by_pid.get(chosen)
+                if entry.get("status") == "confirmed" and target and names.get(target, {}).get("status") != "confirmed":
+                    names[target] = entry
         todo = {
             key: pid
             for key, pid in wanted.items()

@@ -137,24 +137,16 @@ def receipt_name(name: str) -> str:
     return " ".join((name or "").upper().split())
 
 
-def account_ids(products: dict[str, Any], receipts: dict[str, Any]) -> dict[str, int]:
+def account_ids(products: dict[str, Any], receipts: dict[str, Any] | None = None) -> dict[str, int]:
     """Product key -> AH webshop id, from receipts fetched through the AH account.
 
-    Each fetched receipt carries `ids`: [{name, price, id}] per line. A product
-    takes the id from its most recent receipt that has one, matched on name and
-    unit price (so two products with the same short name stay apart).
+    Products are already split per AH id (see prices.build_products); each
+    takes the id of its most recent purchase that has one.
     """
     out: dict[str, int] = {}
     for key, product in products.items():
         for obs in reversed(product.observations):
-            lines = [x for x in receipts.get(obs.receipt_id, {}).get("ids") or [] if x["name"] == product.name]
-            if not lines:
-                continue
-            same_price = [x for x in lines if x.get("price") is not None and abs(x["price"] - obs.price) < 0.005]
-            if same_price:
-                out[key] = same_price[0]["id"]
-            elif len({x["id"] for x in lines}) == 1:
-                out[key] = lines[0]["id"]
-            if key in out:
+            if obs.pid:
+                out[key] = obs.pid
                 break
     return out

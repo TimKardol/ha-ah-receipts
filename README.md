@@ -19,7 +19,8 @@ Everything stays in your own Home Assistant; nothing is sent anywhere.
 
 - Product lines on an AH receipt show the regular shelf price; Bonus discounts are separate lines, so Bonus does not count as a price change.
 - Deposit lines (`+STATIEGELD`) are ignored.
-- Products sold by weight (meat, cheese) have a different price every time. They are marked **wisselend gewicht** and left out of the comparison when the same name has two prices on one receipt, or when the price changed on three purchases in a row. You can switch this per product on the card.
+- Products sold by weight (meat, cheese) have a different price every time. They are marked **wisselend gewicht** and left out of the comparison: when AH lists the product by approximate weight ("ca. 280 g"), when the same product has two prices on one receipt, or, for products without a known AH product, when the price changed on three purchases in a row. You can switch this per product on the card.
+- With the AH login, products that print the same short name (for example a 0,5 l and a 1,5 l bottle of the same water) are told apart by AH's own product id.
 - AH cuts names to about 12 characters. When the price under one short name jumps by more than 30%, it is treated as a different product (shown as "1 van 2"); a **Samenvoegen** button on the card merges them back.
 
 ## Full product names

@@ -108,3 +108,36 @@ def test_name_info_reaches_product():
     info = prices.build_products(data)["AH SPAGHETTI"].as_dict()
     assert info["title"] == "AH Spaghetti" and info["match_status"] == "auto" and info["product_id"] == 7
     assert prices.build_products(data)["AH PINDAKAAS"].as_dict()["match_status"] == "new"
+
+
+
+def _account_receipt(day, lines):
+    """A receipt fetched through the AH account: (name, unit, AH id) per line."""
+    return {
+        "when": f"2026-03-{day:02d}T10:00:00",
+        "items": [{"name": n, "qty": 1, "unit": u, "bonus": False} for n, u, _ in lines],
+        "ids": [{"name": n, "price": u, "id": i} for n, u, i in lines],
+    }
+
+
+def test_same_short_name_different_ah_products_are_split_not_weighed():
+    receipts = {
+        "r1": _account_receipt(1, [("AH WATER", 0.49, 1), ("AH WATER", 2.29, 2)]),
+        "r2": _account_receipt(8, [("AH WATER", 0.55, 1)]),
+        "r3": _account_receipt(15, [("AH WATER", 2.29, 2), ("AH WATER", 0.59, 1)]),
+    }
+    products = prices.build_products({"receipts": receipts, "overrides": {}})
+    assert set(products) == {"AH WATER", "AH WATER#2"}
+    assert [o.price for o in products["AH WATER"].observations] == [0.49, 0.55, 0.59]
+    assert not products["AH WATER"].variable and not products["AH WATER#2"].variable
+
+
+def test_weight_comes_from_ah_size():
+    receipts = {f"r{d}": _account_receipt(d, [("AH STEAK", p, 7), ("AH KAAS", k, 8)])
+                for d, p, k in ((1, 6.10, 3.29), (8, 5.80, 3.39), (15, 6.40, 3.49), (22, 6.00, 3.59))}
+    names = {"AH STEAK": {"status": "account", "match": {"id": 7, "size": "ca. 280 g"}},
+             "AH KAAS": {"status": "account", "match": {"id": 8, "size": "190 g"}}}
+    products = prices.build_products({"receipts": receipts, "overrides": {}, "names": names})
+    assert products["AH STEAK"].variable  # sold by weight
+    assert not products["AH KAAS"].variable  # price went up every time, but it is a fixed pack
+    assert products["AH KAAS"].as_dict()["diff"] == 0.30

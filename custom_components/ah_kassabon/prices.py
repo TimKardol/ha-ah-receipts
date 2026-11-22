@@ -32,6 +32,7 @@ class Observation:
     price: float
     qty: int
     bonus: bool
+    pid: int | None = None  # AH product id, when the receipt came from the account
 
 
 @dataclass
@@ -45,6 +46,7 @@ class Product:
     variant: int = 1
     variants: int = 1
     info: dict[str, Any] = field(default_factory=dict)  # data["names"][key]
+    pid: int | None = None  # AH product id this variant was split on
 
     def __post_init__(self) -> None:
         self.key = self.key or self.name
@@ -124,25 +126,33 @@ def _receipt_price(units: list[float]) -> float:
 
 
 def build_products(data: dict[str, Any]) -> dict[str, Product]:
-    """Build every product's price history from the stored receipts, keyed by product key."""
+    """Build every product's price history from the stored receipts, keyed by product key.
+
+    Receipts fetched through the AH account carry the exact AH product per line
+    (`ids`), so different products that print the same short name are kept
+    apart by id. Without ids, a big price jump under one name starts a new
+    product instead.
+    """
     receipts = sorted(data.get("receipts", {}).items(), key=lambda kv: kv[1]["when"])
     overrides = data.get("overrides", {})
     names = data.get("names", {})
 
-    # 1. One observation per short name per receipt.
+    # 1. One observation per (short name, AH product) per receipt.
     by_name: dict[str, Product] = {}
+    in_receipt_spread: dict[tuple[str, Any], bool] = {}
     for receipt_id, receipt in receipts:
-        per_name: dict[str, list[dict[str, Any]]] = {}
+        ids = receipt.get("ids") or []
+        groups: dict[tuple[str, Any], list[dict[str, Any]]] = {}
         for item in receipt["items"]:
-            per_name.setdefault(item["name"], []).append(item)
-        for name, lines in per_name.items():
+            groups.setdefault((item["name"], _line_id(item, ids)), []).append(item)
+        for (name, pid), lines in groups.items():
             product = by_name.setdefault(name, Product(name))
             units = [line["unit"] for line in lines]
             if any(line.get("per_kg") for line in lines):
                 product.per_kg = True
             if len(set(units)) > 1:
-                # Same name, different prices on one receipt: sold by weight.
-                product.variable_auto = True
+                # Same product, different prices on one receipt: sold by weight.
+                in_receipt_spread[(name, pid)] = True
             product.observations.append(
                 Observation(
                     receipt_id=receipt_id,
@@ -150,43 +160,78 @@ def build_products(data: dict[str, Any]) -> dict[str, Product]:
                     price=_receipt_price(units),
                     qty=sum(line["qty"] for line in lines),
                     bonus=any(line["bonus"] for line in lines),
+                    pid=pid,
                 )
             )
 
-    # 2. Split a short name into separate products on big price jumps.
+    # 2. Split a short name into separate products (by AH id, else by price).
     products: dict[str, Product] = {}
     for name, whole in by_name.items():
-        base = overrides.get(name, {})
-        variable = base.get("variable", whole.variable_auto)
-        if variable or base.get("no_split"):
-            parts = [whole]
-        else:
-            parts = _split(whole)
+        has_ids = any(o.pid for o in whole.observations)
+        keep_whole = overrides.get(name, {}).get("no_split") or (
+            # Without AH ids, a weighed product's prices jump around: don't split it.
+            not has_ids
+            and (in_receipt_spread.get((name, None)) or overrides.get(name, {}).get("variable"))
+        )
+        parts = [whole] if keep_whole else _split(whole)
         for idx, part in enumerate(parts, start=1):
             part.variant, part.variants = idx, len(parts)
             part.key = name if idx == 1 else f"{name}#{idx}"
             if part is not whole:
                 part.per_kg = whole.per_kg
-            if not part.variable_auto:
-                part.variable_auto = _changes_every_time(part.observations)
-            part.variable_override = overrides.get(part.key, {}).get("variable")
             part.info = names.get(part.key, {})
+            part.variable_auto = _sold_by_weight(part, in_receipt_spread)
+            part.variable_override = overrides.get(part.key, {}).get("variable")
             products[part.key] = part
     return products
+
+
+def _line_id(item: dict[str, Any], ids: list[dict[str, Any]]) -> Any:
+    """The AH product id of a receipt line, matched on name and unit price."""
+    same = [x for x in ids if x.get("name") == item["name"]]
+    if not same:
+        return None
+    close = [x for x in same if x.get("price") is not None and abs(x["price"] - item["unit"]) < 0.005]
+    if close:
+        return close[0]["id"]
+    if len({x["id"] for x in same}) == 1:
+        return same[0]["id"]
+    return None
+
+
+def _sold_by_weight(product: Product, in_receipt_spread: dict[tuple[str, Any], bool]) -> bool:
+    size = ((product.info.get("match") or {}).get("size") or "").strip().lower()
+    if size.startswith("ca"):  # AH lists weighed products as "ca. 280 g"
+        return True
+    pids = {o.pid for o in product.observations}
+    if any(in_receipt_spread.get((product.name, pid)) for pid in pids):
+        return True
+    if size or any(pids):
+        # A known, fixed-size product: price changes are real price changes.
+        return False
+    return _changes_every_time(product.observations)
 
 
 def _split(whole: Product) -> list[Product]:
     parts: list[Product] = []
     for obs in whole.observations:
-        best, best_off = None, None
-        for part in parts:
-            last = part.observations[-1].price
-            off = abs(obs.price - last) / last if last else 1.0
-            if off <= SPLIT_JUMP and (best_off is None or off < best_off):
-                best, best_off = part, off
+        best = None
+        if obs.pid is not None:
+            best = next((p for p in parts if p.pid == obs.pid), None)
+        if best is None:
+            best_off = None
+            for part in parts:
+                if obs.pid is not None and part.pid is not None:
+                    continue  # a different AH product
+                last = part.observations[-1].price
+                off = abs(obs.price - last) / last if last else 1.0
+                if off <= SPLIT_JUMP and (best_off is None or off < best_off):
+                    best, best_off = part, off
         if best is None:
             best = Product(whole.name)
             parts.append(best)
+        if best.pid is None:
+            best.pid = obs.pid
         best.observations.append(obs)
     return parts or [whole]
 
