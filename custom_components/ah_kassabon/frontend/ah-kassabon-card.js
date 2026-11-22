@@ -7,7 +7,7 @@
  *   limit: 10                       # rows before "Toon alles"
  */
 const DOMAIN = 'ah_kassabon';
-const VERSION = '0.3.0';
+const VERSION = '0.3.2';
 
 const CSS = `
 :host {
@@ -43,7 +43,7 @@ button { font: inherit; color: inherit; border: 0; cursor: pointer; }
 .sync:hover { background: var(--akc-active); }
 .sync[disabled] { opacity: .6; cursor: progress; }
 .sync ha-icon { --mdc-icon-size: 18px; }
-.stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 14px; }
+.stats { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; margin-top: 14px; }
 .stat { background: var(--akc-hi); border-radius: var(--thuis-radius-control, 12px); padding: 10px 12px; min-width: 0; }
 .stat .v { font-family: var(--akc-mono); font-size: 18px; font-weight: 600; }
 .stat .l { font-size: 12px; color: var(--akc-fg-2); margin-top: 2px; }
@@ -302,8 +302,6 @@ class AhKassabonCard extends HTMLElement {
     const down = tracked.filter((p) => p.diff < 0).length;
     const check = products.filter(needsCheck).length;
     const account = (data && data.account) || {};
-    const avg = tracked.length ? tracked.reduce((s, p) => s + (p.pct || 0), 0) / tracked.length : null;
-    const oldest = receipts.length ? receipts[receipts.length - 1].when : null;
     const sub = receipts.length
       ? `${receipts.length} ${receipts.length === 1 ? 'bon' : 'bonnen'} · laatste ${day(receipts[0].when)}`
       : 'Nog geen kassabonnen';
@@ -352,7 +350,6 @@ class AhKassabonCard extends HTMLElement {
           <input type="file" accept="application/pdf,.pdf" multiple>
         </div>
         ${receipts.length >= 2 ? `<div class="stats">
-          <div class="stat"><div class="v ${avg > 0 ? 'up' : avg < 0 ? 'down' : ''}">${pct(avg)}</div><div class="l">mandje sinds ${day(oldest)}</div></div>
           <div class="stat"><div class="v ${up ? 'up' : ''}">${up}</div><div class="l">duurder</div></div>
           <div class="stat"><div class="v ${down ? 'down' : ''}">${down}</div><div class="l">goedkoper</div></div>
         </div>` : ''}
