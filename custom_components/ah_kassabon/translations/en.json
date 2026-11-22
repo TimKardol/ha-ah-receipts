@@ -1,0 +1,62 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "AH Kassabon",
+        "description": "Read Albert Heijn receipt PDFs from the AH app and track which products get more expensive."
+      }
+    },
+    "abort": {
+      "single_instance_allowed": "AH Kassabon is already set up."
+    }
+  },
+  "entity": {
+    "sensor": {
+      "latest_receipt": {
+        "name": "Latest receipt"
+      },
+      "more_expensive": {
+        "name": "More expensive"
+      },
+      "average_change": {
+        "name": "Basket price change"
+      }
+    }
+  },
+  "services": {
+    "import_file": {
+      "name": "Import receipt",
+      "description": "Imports a receipt PDF that is already stored in Home Assistant.",
+      "fields": {
+        "path": {
+          "name": "Path",
+          "description": "Full path to the PDF, for example in /media."
+        }
+      }
+    },
+    "set_variable": {
+      "name": "Set variable weight",
+      "description": "Mark a product as sold by weight so it is left out of price alerts.",
+      "fields": {
+        "product": {
+          "name": "Product",
+          "description": "Product name as printed on the receipt."
+        },
+        "variable": {
+          "name": "Variable weight",
+          "description": "On, off, or empty to decide automatically."
+        }
+      }
+    },
+    "remove_receipt": {
+      "name": "Remove receipt",
+      "description": "Removes an imported receipt.",
+      "fields": {
+        "receipt_id": {
+          "name": "Receipt ID",
+          "description": "ID such as 202601311015-1234."
+        }
+      }
+    }
+  }
+}

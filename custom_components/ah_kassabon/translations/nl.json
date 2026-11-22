@@ -1,0 +1,62 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "AH Kassabon",
+        "description": "Lees AH-kassabonnen (PDF uit de AH-app) in en volg welke producten duurder worden."
+      }
+    },
+    "abort": {
+      "single_instance_allowed": "AH Kassabon is al ingesteld."
+    }
+  },
+  "entity": {
+    "sensor": {
+      "latest_receipt": {
+        "name": "Laatste kassabon"
+      },
+      "more_expensive": {
+        "name": "Duurder geworden"
+      },
+      "average_change": {
+        "name": "Prijsverandering mandje"
+      }
+    }
+  },
+  "services": {
+    "import_file": {
+      "name": "Kassabon inlezen",
+      "description": "Leest een kassabon-PDF in die al in Home Assistant staat.",
+      "fields": {
+        "path": {
+          "name": "Pad",
+          "description": "Volledig pad naar de PDF, bijvoorbeeld in /media."
+        }
+      }
+    },
+    "set_variable": {
+      "name": "Wisselend gewicht instellen",
+      "description": "Markeer een product als 'wisselend gewicht' zodat het niet meetelt in prijsmeldingen.",
+      "fields": {
+        "product": {
+          "name": "Product",
+          "description": "Productnaam zoals op de kassabon."
+        },
+        "variable": {
+          "name": "Wisselend gewicht",
+          "description": "Aan, uit, of leeg om automatisch te laten bepalen."
+        }
+      }
+    },
+    "remove_receipt": {
+      "name": "Kassabon verwijderen",
+      "description": "Verwijdert een ingelezen kassabon.",
+      "fields": {
+        "receipt_id": {
+          "name": "Kassabon-ID",
+          "description": "ID zoals 202601311015-1234."
+        }
+      }
+    }
+  }
+}
