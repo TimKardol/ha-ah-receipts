@@ -3,11 +3,11 @@
  *
  *   type: custom:ah-kassabon-card
  *   title: Boodschappenprijzen      # optional
- *   filter: up                      # up | down | all | variable  (default up)
+ *   filter: up                      # up | down | all | check | variable  (default up)
  *   limit: 10                       # rows before "Toon alles"
  */
 const DOMAIN = 'ah_kassabon';
-const VERSION = '0.1.1';
+const VERSION = '0.2.0';
 
 const CSS = `
 :host {
@@ -22,6 +22,7 @@ const CSS = `
   --akc-tile: var(--thuis-effect-tile, rgba(255,119,20,.26));
   --akc-up: var(--error-color, #F94F54);
   --akc-down: var(--success-color, #3BDD7E);
+  --akc-warn: var(--warning-color, #FBCC2C);
   --akc-sans: var(--ha-font-family-body, 'Space Grotesk', system-ui, sans-serif);
   --akc-mono: var(--ha-font-family-code, 'IBM Plex Mono', ui-monospace, monospace);
   display: block;
@@ -49,20 +50,38 @@ button { font: inherit; color: inherit; border: 0; cursor: pointer; }
 .chips { display: flex; gap: 6px; margin: 14px 0 6px; overflow-x: auto; scrollbar-width: none; }
 .chip { flex: none; height: 30px; padding: 0 12px; border-radius: var(--thuis-radius-full, 9999px); background: transparent; color: var(--akc-fg-2); font-size: 13px; box-shadow: inset 0 0 0 1px var(--akc-divider); }
 .chip.on { background: var(--akc-active); color: var(--akc-fg); box-shadow: none; }
+.chip .n { font-family: var(--akc-mono); margin-left: 4px; }
 .row { display: flex; align-items: center; gap: 10px; padding: 9px 4px; border-top: 1px solid var(--akc-divider); cursor: pointer; }
 .row:first-child { border-top: 0; }
+.thumb { flex: none; width: 34px; height: 34px; border-radius: 8px; background: #fff center/contain no-repeat; }
+.thumb.none { background: var(--akc-hi); }
 .row .n { flex: 1; min-width: 0; }
 .row .name { font-size: 14px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.row .meta { font-size: 12px; color: var(--akc-fg-2); margin-top: 1px; font-family: var(--akc-mono); }
+.row .meta { font-size: 12px; color: var(--akc-fg-2); margin-top: 1px; font-family: var(--akc-mono); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .pct { flex: none; font-family: var(--akc-mono); font-size: 13px; font-weight: 600; padding: 3px 8px; border-radius: var(--thuis-radius-full, 9999px); background: var(--akc-hi); }
 .pct.up { background: color-mix(in srgb, var(--akc-up) 16%, transparent); }
 .pct.down { background: color-mix(in srgb, var(--akc-down) 16%, transparent); }
+.pct.check { color: var(--akc-warn); background: color-mix(in srgb, var(--akc-warn) 14%, transparent); }
 .detail { padding: 4px 4px 12px; }
 .detail svg { width: 100%; height: 56px; display: block; }
 .detail .line { stroke: var(--akc-icon); stroke-width: 2; fill: none; }
 .detail .dot { fill: var(--akc-icon); }
 .detail .axis { display: flex; justify-content: space-between; font-size: 11px; color: var(--akc-fg-3); font-family: var(--akc-mono); }
-.toggle { display: flex; align-items: center; justify-content: space-between; margin-top: 8px; font-size: 13px; color: var(--akc-fg-2); }
+.toggle { display: flex; align-items: center; justify-content: space-between; margin-top: 8px; font-size: 13px; color: var(--akc-fg-2); gap: 8px; }
+.section { margin-top: 10px; font-size: 12px; color: var(--akc-fg-3); text-transform: uppercase; letter-spacing: .04em; }
+.match { display: flex; align-items: center; gap: 10px; margin-top: 6px; padding: 8px; border-radius: var(--thuis-radius-control, 12px); background: var(--akc-hi); }
+.match .n { flex: 1; min-width: 0; font-size: 13px; }
+.match .n small { display: block; color: var(--akc-fg-2); font-family: var(--akc-mono); font-size: 11px; margin-top: 1px; }
+.cand { width: 100%; text-align: left; background: transparent; }
+.cand:hover { background: var(--akc-active); }
+.cand .score { flex: none; font-family: var(--akc-mono); font-size: 11px; color: var(--akc-fg-3); }
+.actions { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+.btn { height: 30px; padding: 0 12px; border-radius: var(--thuis-radius-full, 9999px); background: var(--akc-hi); font-size: 13px; }
+.btn:hover { background: var(--akc-active); }
+.btn.primary { background: var(--akc-tile); color: var(--akc-icon); font-weight: 600; }
+.searchbar { display: flex; gap: 6px; margin-top: 8px; }
+.searchbar input { flex: 1; min-width: 0; height: 32px; padding: 0 10px; border-radius: var(--thuis-radius-control, 12px); border: 1px solid var(--akc-divider); background: transparent; color: var(--akc-fg); font: inherit; font-size: 13px; }
+.hint { font-size: 12px; color: var(--akc-fg-2); margin-top: 6px; }
 .empty { padding: 18px 4px 6px; font-size: 13px; color: var(--akc-fg-2); text-align: center; line-height: 1.5; }
 .more { display: block; width: 100%; margin-top: 6px; height: 34px; border-radius: var(--thuis-radius-control, 12px); background: transparent; color: var(--akc-fg-2); font-size: 13px; }
 .more:hover { background: var(--akc-hi); }
@@ -79,7 +98,9 @@ const nice = (name) => {
   const rest = (ah ? name.slice(3) : name).toLowerCase();
   return (ah ? 'AH ' : '') + rest.charAt(0).toUpperCase() + rest.slice(1);
 };
-const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const esc = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const needsCheck = (p) => p.match_status === 'pending' || p.match_status === 'none';
+const label = (p) => p.title || nice(p.name) + (p.variants > 1 ? ` · ${eur(p.first_price)}` : '');
 
 class AhKassabonCard extends HTMLElement {
   setConfig(config) {
@@ -87,6 +108,8 @@ class AhKassabonCard extends HTMLElement {
     this._filter = this._config.filter;
     this._open = null;
     this._showAll = false;
+    this._picking = null;
+    this._results = null;
     if (!this.shadowRoot) this.attachShadow({ mode: 'open' });
     this._render();
   }
@@ -105,6 +128,7 @@ class AhKassabonCard extends HTMLElement {
 
   disconnectedCallback() {
     if (this._unsub) { this._unsub(); this._unsub = null; this._hass = null; }
+    clearTimeout(this._poll);
   }
 
   async _load() {
@@ -113,6 +137,34 @@ class AhKassabonCard extends HTMLElement {
       this._error = null;
     } catch (e) {
       this._error = e.message || 'AH Kassabon is niet geladen';
+    }
+    // Names are looked up in the background after an upload: refresh a few times.
+    clearTimeout(this._poll);
+    const products = (this._data && this._data.products) || [];
+    if (products.some((p) => p.match_status === 'new') && (this._polls = (this._polls || 0) + 1) <= 12) {
+      this._poll = setTimeout(() => this._load(), 5000);
+    } else if (!products.some((p) => p.match_status === 'new')) {
+      this._polls = 0;
+    }
+    this._render();
+  }
+
+  _ws(msg) { return this._hass.connection.sendMessagePromise(msg); }
+
+  async _setProduct(key, changes) {
+    await this._ws({ type: `${DOMAIN}/set_product`, key, ...changes });
+    this._picking = null; this._results = null;
+    await this._load();
+  }
+
+  async _search(key, query) {
+    this._results = { loading: true };
+    this._render();
+    try {
+      const r = await this._ws({ type: `${DOMAIN}/search`, key, query });
+      this._results = { items: r.results };
+    } catch (e) {
+      this._results = { error: e.message || 'Zoeken mislukt' };
     }
     this._render();
   }
@@ -131,23 +183,23 @@ class AhKassabonCard extends HTMLElement {
       this._banner = { err: true, html: `Uploaden mislukt: ${esc(e.message)}` };
     }
     this._busy = false;
+    this._polls = 0;
     await this._load();
   }
 
   _describe(results) {
+    const missing = (r) => (r.missing_items ? ` <span class="up">Let op: ${r.missing_items} product${r.missing_items === 1 ? '' : 'en'} niet herkend.</span>` : '');
     const parts = results.map((r) => {
       if (!r.ok) return `<b>${esc(r.file || 'Bestand')}</b>: ${esc(r.error)}`;
       const when = day(r.when);
       if (r.duplicate) return `Bon van <b>${when}</b> stond er al in.`;
       const up = r.increases.length, down = r.decreases.length;
       let s = `Bon van <b>${when}</b> ingelezen (${r.items} producten). `;
-      if (!r.compared) return s + 'Nog niks om mee te vergelijken; dat komt bij de volgende bon.' + (r.missing_items ? ` <span class="up">Let op: ${r.missing_items} product${r.missing_items === 1 ? '' : 'en'} niet herkend.</span>` : '');
+      if (!r.compared) return s + 'Nog niks om mee te vergelijken; dat komt bij de volgende bon.' + missing(r);
       s += up ? `<span class="up"><b>${up} duurder</b></span>` : 'Niks duurder';
       if (down) s += `, <span class="down">${down} goedkoper</span>`;
-      if (up) s += ': ' + r.increases.slice(0, 3).map((c) => `${esc(nice(c.product))} ${signedEur(c.diff)}`).join(', ') + (up > 3 ? ' …' : '');
-      s += '.';
-      if (r.missing_items) s += ` <span class="up">Let op: ${r.missing_items} product${r.missing_items === 1 ? '' : 'en'} niet herkend.</span>`;
-      return s;
+      if (up) s += ': ' + r.increases.slice(0, 3).map((c) => `${esc(c.title || nice(c.product))} ${signedEur(c.diff)}`).join(', ') + (up > 3 ? ' …' : '');
+      return s + '.' + missing(r);
     });
     return { err: results.every((r) => !r.ok), html: parts.join('<br>') };
   }
@@ -158,8 +210,9 @@ class AhKassabonCard extends HTMLElement {
     switch (this._filter) {
       case 'up': return tracked.filter((p) => p.diff > 0).sort((a, b) => b.pct - a.pct);
       case 'down': return tracked.filter((p) => p.diff < 0).sort((a, b) => a.pct - b.pct);
+      case 'check': return products.filter(needsCheck).sort((a, b) => b.times - a.times || a.name.localeCompare(b.name));
       case 'variable': return products.filter((p) => p.variable).sort((a, b) => a.name.localeCompare(b.name));
-      default: return products.slice().sort((a, b) => (b.pct || 0) - (a.pct || 0) || a.name.localeCompare(b.name));
+      default: return products.slice().sort((a, b) => (b.pct || 0) - (a.pct || 0) || label(a).localeCompare(label(b)));
     }
   }
 
@@ -172,13 +225,50 @@ class AhKassabonCard extends HTMLElement {
     const [v0, v1] = [Math.min(...v), Math.max(...v)];
     const x = (i) => pad + ((t[i] - t0) / (t1 - t0 || 1)) * (w - 2 * pad);
     const y = (i) => h - pad - ((v[i] - v0) / (v1 - v0 || 1)) * (h - 2 * pad);
-    const pts = history.map((_, i) => `${x(i).toFixed(1)},${y(i).toFixed(1)}`);
-    // step line: a price holds until the next receipt
-    let d = `M${pts[0]}`;
-    for (let i = 1; i < pts.length; i++) d += ` H${x(i).toFixed(1)} V${y(i).toFixed(1)}`;
+    let d = `M${x(0).toFixed(1)},${y(0).toFixed(1)}`;
+    for (let i = 1; i < history.length; i++) d += ` H${x(i).toFixed(1)} V${y(i).toFixed(1)}`;
     const dots = history.map((_, i) => `<circle class="dot" cx="${x(i).toFixed(1)}" cy="${y(i).toFixed(1)}" r="2.5"/>`).join('');
     return `<svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="none"><path class="line" d="${d}"/>${dots}</svg>
       <div class="axis"><span>${day(history[0][0])} · ${eur(v[0])}</span><span>${eur(v0)}–${eur(v1)}</span><span>${day(history[history.length - 1][0])} · ${eur(v[v.length - 1])}</span></div>`;
+  }
+
+  _thumb(img) {
+    return img ? `<div class="thumb" style="background-image:url('${esc(img)}')"></div>` : '<div class="thumb none"></div>';
+  }
+
+  _candidate(c, key) {
+    return `<button class="match cand" data-pick="${esc(key)}" data-cand='${esc(JSON.stringify(c))}'>
+      ${this._thumb(c.image)}
+      <div class="n">${esc(c.title)}<small>${esc(c.size || '')}${c.size ? ' · ' : ''}${eur(c.price)}</small></div>
+    </button>`;
+  }
+
+  _nameSection(p) {
+    const key = p.key;
+    let html = '<div class="section">Product</div>';
+    if (p.title && this._picking !== key) {
+      html += `<div class="match">${this._thumb(p.image)}<div class="n">${esc(p.title)}<small>${esc(p.size || '')}${p.match_status === 'auto' ? ' · automatisch gekozen' : ''}</small></div></div>
+        <div class="actions">
+          ${p.match_status === 'auto' ? `<button class="btn primary" data-confirm="${esc(key)}">Klopt</button>` : ''}
+          <button class="btn" data-change="${esc(key)}">Ander product</button>
+        </div>`;
+      return html;
+    }
+    if (p.match_status === 'new') return html + '<div class="hint">Naam wordt opgezocht bij AH…</div>';
+    if (p.match_status === 'skipped' && this._picking !== key) {
+      return html + `<div class="hint">Geen AH-product gekoppeld.</div><div class="actions"><button class="btn" data-change="${esc(key)}">Toch zoeken</button></div>`;
+    }
+    const cands = this._results && this._picking === key ? this._results : { items: p.candidates || [] };
+    html += `<div class="hint">Welk product is "${esc(p.name)}" (${eurP(p, p.price)} op je bon)?</div>`;
+    if (cands.loading) html += '<div class="hint">Zoeken…</div>';
+    else if (cands.error) html += `<div class="hint up">${esc(cands.error)}</div>`;
+    else if (!cands.items.length) html += '<div class="hint">Geen suggesties gevonden. Zoek zelf hieronder.</div>';
+    else html += cands.items.map((c) => this._candidate(c, key)).join('');
+    html += `<div class="searchbar"><input type="search" placeholder="Zoek bij AH, bijv. italiaanse bollen" data-q="${esc(key)}" value="${esc(this._query || '')}">
+      <button class="btn" data-search="${esc(key)}">Zoek</button></div>
+      <div class="actions"><button class="btn" data-skip="${esc(key)}">Geen van deze</button>
+      ${this._picking === key ? `<button class="btn" data-cancel="1">Annuleren</button>` : ''}</div>`;
+    return html;
   }
 
   _render() {
@@ -190,6 +280,7 @@ class AhKassabonCard extends HTMLElement {
     const tracked = products.filter((p) => !p.variable && p.times >= 2);
     const up = tracked.filter((p) => p.diff > 0).length;
     const down = tracked.filter((p) => p.diff < 0).length;
+    const check = products.filter(needsCheck).length;
     const avg = tracked.length ? tracked.reduce((s, p) => s + (p.pct || 0), 0) / tracked.length : null;
     const oldest = receipts.length ? receipts[receipts.length - 1].when : null;
     const sub = receipts.length
@@ -198,32 +289,38 @@ class AhKassabonCard extends HTMLElement {
 
     const rows = this._rows();
     const limit = this._showAll ? rows.length : c.limit;
-    const filters = [['up', 'Duurder'], ['down', 'Goedkoper'], ['all', 'Alles'], ['variable', 'Wisselend gewicht']];
+    const filters = [['up', 'Duurder'], ['down', 'Goedkoper'], ['all', 'Alles'], ['check', 'Controleren', check], ['variable', 'Wisselend gewicht']];
 
     let list;
     if (this._error) list = `<div class="empty">${esc(this._error)}</div>`;
     else if (!data) list = `<div class="empty">Laden…</div>`;
     else if (!receipts.length) list = `<div class="empty">Deel een kassabon in de AH-app als PDF<br>en voeg hem hier toe met <b>Bon toevoegen</b>.</div>`;
-    else if (!rows.length) list = `<div class="empty">${this._filter === 'up' ? (receipts.length < 2 ? 'Voeg nog een bon toe om prijzen te vergelijken.' : 'Niks duurder geworden. 🎉') : 'Geen producten in deze lijst.'}</div>`;
+    else if (!rows.length) list = `<div class="empty">${this._filter === 'up' ? (receipts.length < 2 ? 'Voeg nog een bon toe om prijzen te vergelijken.' : 'Niks duurder geworden. 🎉') : this._filter === 'check' ? 'Alle producten hebben een naam.' : 'Geen producten in deze lijst.'}</div>`;
     else list = rows.slice(0, limit).map((p) => {
       const cls = p.variable ? '' : p.diff > 0 ? 'up' : p.diff < 0 ? 'down' : '';
-      const meta = p.variable
-        ? `${eurP(p, p.price)} · ${p.times}× gekocht`
-        : p.times < 2
-          ? `${eurP(p, p.price)} · 1× gekocht`
-          : p.diff
-            ? `${eur(p.first_price)} → ${eurP(p, p.price)} · sinds ${day(p.first_when)} · ${p.times}×`
-            : `${eurP(p, p.price)} · ${p.times}× gekocht`;
-      const open = this._open === p.name;
-      return `<div class="row" data-name="${esc(p.name)}">
-          <div class="n"><div class="name">${esc(nice(p.name))}</div><div class="meta">${meta}</div></div>
-          ${p.variable ? '<span class="pct">gewicht</span>' : p.times >= 2 ? `<span class="pct ${cls}">${pct(p.pct)}</span>` : ''}
+      const size = p.size ? `${p.size} · ` : '';
+      const meta = p.variable || p.times < 2 || !p.diff
+        ? `${size}${eurP(p, p.price)} · ${p.times}× gekocht`
+        : `${eur(p.first_price)} → ${eurP(p, p.price)} · sinds ${day(p.first_when)} · ${p.times}×`;
+      const badge = this._filter === 'check' || (needsCheck(p) && !(p.times >= 2 && p.diff))
+        ? (needsCheck(p) ? '<span class="pct check">kiezen</span>' : '')
+        : p.variable ? '<span class="pct">gewicht</span>' : p.times >= 2 ? `<span class="pct ${cls}">${pct(p.pct)}</span>` : '';
+      const open = this._open === p.key;
+      return `<div class="row" data-key="${esc(p.key)}">
+          ${this._thumb(p.image)}
+          <div class="n"><div class="name">${esc(label(p))}</div><div class="meta">${meta}</div></div>
+          ${badge}
         </div>
         ${open ? `<div class="detail">${this._spark(p.history)}
+          ${this._nameSection(p)}
           <div class="toggle"><span>Wisselend gewicht${p.variable_auto ? ' (automatisch herkend)' : ''}</span>
-          <ha-switch data-var="${esc(p.name)}" ${p.variable ? 'checked' : ''}></ha-switch></div></div>` : ''}`;
+          <ha-switch data-var="${esc(p.key)}" ${p.variable ? 'checked' : ''}></ha-switch></div>
+          ${p.variants > 1 ? `<div class="toggle"><span>Bon-naam "${esc(p.name)}" is ${p.variants} producten (op prijs gesplitst)</span>
+          <button class="btn" data-merge="${esc(p.key)}">Samenvoegen</button></div>` : ''}
+          </div>` : ''}`;
     }).join('');
 
+    const focused = this.shadowRoot.activeElement && this.shadowRoot.activeElement.dataset && this.shadowRoot.activeElement.dataset.q;
     this.shadowRoot.innerHTML = `<style>${CSS}</style>
       <ha-card>
         <div class="head">
@@ -238,23 +335,40 @@ class AhKassabonCard extends HTMLElement {
           <div class="stat"><div class="v ${down ? 'down' : ''}">${down}</div><div class="l">goedkoper</div></div>
         </div>` : ''}
         ${this._banner ? `<div class="banner ${this._banner.err ? 'err' : ''}">${this._banner.html}</div>` : ''}
-        ${receipts.length ? `<div class="chips">${filters.map(([k, l]) => `<button class="chip ${this._filter === k ? 'on' : ''}" data-f="${k}">${l}</button>`).join('')}</div>` : ''}
+        ${receipts.length ? `<div class="chips">${filters.map(([k, l, n]) => `<button class="chip ${this._filter === k ? 'on' : ''}" data-f="${k}">${l}${n ? `<span class="n">${n}</span>` : ''}</button>`).join('')}</div>` : ''}
         <div class="list">${list}</div>
         ${rows.length > limit ? `<button class="more">Toon alles (${rows.length})</button>` : ''}
       </ha-card>`;
 
     const root = this.shadowRoot;
+    const on = (sel, fn) => root.querySelectorAll(sel).forEach((el) => el.addEventListener('click', (ev) => { ev.stopPropagation(); fn(el, ev); }));
     const input = root.querySelector('input[type=file]');
     root.querySelector('.upload').addEventListener('click', () => input.click());
     input.addEventListener('change', () => this._upload([...input.files]));
-    root.querySelectorAll('.chip').forEach((b) => b.addEventListener('click', () => { this._filter = b.dataset.f; this._showAll = false; this._open = null; this._render(); }));
-    root.querySelectorAll('.row').forEach((r) => r.addEventListener('click', () => { this._open = this._open === r.dataset.name ? null : r.dataset.name; this._render(); }));
-    const more = root.querySelector('.more');
-    if (more) more.addEventListener('click', () => { this._showAll = true; this._render(); });
+    on('.chip', (b) => { this._filter = b.dataset.f; this._showAll = false; this._open = null; this._picking = null; this._render(); });
+    on('.row', (r) => { this._open = this._open === r.dataset.key ? null : r.dataset.key; this._picking = null; this._results = null; this._query = ''; this._render(); });
+    on('.more', () => { this._showAll = true; this._render(); });
+    on('[data-confirm]', (b) => this._setProduct(b.dataset.confirm, { status: 'confirmed' }));
+    on('[data-change]', (b) => { this._picking = b.dataset.change; this._results = null; this._query = ''; this._render(); });
+    on('[data-cancel]', () => { this._picking = null; this._results = null; this._render(); });
+    on('[data-skip]', (b) => this._setProduct(b.dataset.skip, { status: 'skipped' }));
+    on('[data-pick]', (b) => this._setProduct(b.dataset.pick, { match: JSON.parse(b.dataset.cand) }));
+    on('[data-merge]', (b) => this._setProduct(b.dataset.merge, { no_split: true }));
+    on('[data-search]', (b) => {
+      const q = root.querySelector(`input[data-q="${window.CSS.escape(b.dataset.search)}"]`);
+      if (q && q.value.trim()) { this._picking = b.dataset.search; this._query = q.value.trim(); this._search(b.dataset.search, this._query); }
+    });
+    root.querySelectorAll('input[data-q]').forEach((q) => {
+      q.addEventListener('click', (ev) => ev.stopPropagation());
+      q.addEventListener('input', () => { this._query = q.value; });
+      q.addEventListener('keydown', (ev) => {
+        if (ev.key === 'Enter' && q.value.trim()) { this._picking = q.dataset.q; this._query = q.value.trim(); this._search(q.dataset.q, this._query); }
+      });
+      if (focused) { q.focus(); q.setSelectionRange(q.value.length, q.value.length); }
+    });
     root.querySelectorAll('ha-switch').forEach((s) => s.addEventListener('change', async (ev) => {
       ev.stopPropagation();
-      await this._hass.connection.sendMessagePromise({ type: `${DOMAIN}/set_variable`, product: s.dataset.var, variable: s.checked });
-      await this._load();
+      await this._setProduct(s.dataset.var, { variable: s.checked });
     }));
   }
 

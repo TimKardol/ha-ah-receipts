@@ -15,16 +15,18 @@ from homeassistant.components.frontend import add_extra_js_url
 from homeassistant.components.http import KEY_HASS, HomeAssistantView, StaticPathConfig
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
-from homeassistant.core import HomeAssistant, ServiceCall, ServiceResponse, SupportsResponse
+from homeassistant.core import HomeAssistant, ServiceCall, ServiceResponse, SupportsResponse, callback
 from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 import homeassistant.helpers.config_validation as cv
+from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.dispatcher import async_dispatcher_send
 from homeassistant.helpers.storage import Store
 from homeassistant.helpers.typing import ConfigType
 from homeassistant.loader import async_get_integration
 from homeassistant.util import dt as dt_util
 
-from . import prices
+from . import matching, prices
+from .ah_search import AhSearch, AhSearchError
 from .const import (
     CARD_URL,
     DOMAIN,
@@ -48,13 +50,93 @@ class KassabonData:
     def __init__(self, hass: HomeAssistant) -> None:
         self.hass = hass
         self._store: Store[dict[str, Any]] = Store(hass, STORAGE_VERSION, STORAGE_KEY)
-        self.data: dict[str, Any] = {"receipts": {}, "overrides": {}}
+        self.data: dict[str, Any] = {"receipts": {}, "overrides": {}, "names": {}}
         self._lock = asyncio.Lock()
+        self._lookup_lock = asyncio.Lock()
+        self.search = AhSearch(async_get_clientsession(hass))
+        self.entry: ConfigEntry | None = None
 
     async def async_load(self) -> None:
         stored = await self._store.async_load()
         if stored:
-            self.data = {"receipts": {}, "overrides": {}, **stored}
+            self.data = {"receipts": {}, "overrides": {}, "names": {}, **stored}
+
+    # --- full product names via AH search ---------------------------------
+
+    @callback
+    def schedule_lookups(self) -> None:
+        """Look up names for products that have none yet, in the background."""
+        if self.entry is None:
+            return
+        self.entry.async_create_background_task(
+            self.hass, self.async_lookup_missing(), f"{DOMAIN}_lookup"
+        )
+
+    async def async_find(self, short_name: str, target: float | None, query: str | None = None) -> list[dict[str, Any]]:
+        """Search AH and rank the results against a receipt line."""
+        queries = [query] if query else matching.search_queries(short_name)
+        found: list[dict[str, Any]] = []
+        for q in queries:
+            found += await self.search.search(q)
+            if len(found) >= 5:
+                break
+            await asyncio.sleep(0.3)
+        return matching.rank(short_name, target, found)
+
+    async def async_lookup_missing(self) -> None:
+        async with self._lookup_lock:
+            products = prices.build_products(self.data)
+            todo = [p for p in products.values() if p.key not in self.data["names"]]
+            done = 0
+            for product in todo:
+                try:
+                    ranked = await self.async_find(product.name, product.latest.price)
+                except AhSearchError as err:
+                    _LOGGER.warning("AH-productnamen opzoeken lukt nu niet: %s", err)
+                    break
+                auto = matching.pick_automatically(ranked)
+                if auto:
+                    entry = {"status": "auto", "match": _strip(auto)}
+                elif ranked:
+                    entry = {"status": "pending", "candidates": [_strip(c) for c in ranked[:6]]}
+                else:
+                    entry = {"status": "none"}
+                entry["checked"] = dt_util.utcnow().isoformat()
+                self.data["names"][product.key] = entry
+                done += 1
+                if done % 10 == 0:
+                    await self._async_save()
+                await asyncio.sleep(0.5)
+            if done:
+                await self._async_save()
+
+    async def async_set_product(self, key: str, changes: dict[str, Any]) -> None:
+        async with self._lock:
+            base = key.split("#", 1)[0]
+            if "variable" in changes:
+                self._set_override(key, "variable", changes["variable"])
+            if "no_split" in changes:
+                self._set_override(base, "no_split", changes["no_split"])
+            if changes.get("match"):
+                self.data["names"][key] = {"status": "confirmed", "match": _strip(changes["match"])}
+            elif changes.get("status") == "confirmed" and self.data["names"].get(key, {}).get("match"):
+                self.data["names"][key]["status"] = "confirmed"
+            elif changes.get("status") == "skipped":
+                self.data["names"][key] = {"status": "skipped"}
+            elif changes.get("status") == "reset":
+                self.data["names"].pop(key, None)
+            await self._async_save()
+        if changes.get("status") == "reset" or "no_split" in changes:
+            self.schedule_lookups()
+
+    def _set_override(self, key: str, field: str, value: Any) -> None:
+        current = self.data["overrides"].setdefault(key, {})
+        if value is None:
+            current.pop(field, None)
+        else:
+            current[field] = value
+        if not current:
+            self.data["overrides"].pop(key, None)
 
     async def _async_save(self) -> None:
         await self._store.async_save(self.data)
@@ -98,6 +180,7 @@ class KassabonData:
             )
         if not duplicate:
             self.hass.bus.async_fire(EVENT_IMPORTED, result)
+            self.schedule_lookups()
         return result
 
     async def async_set_variable(self, product: str, variable: bool | None) -> None:
@@ -115,6 +198,11 @@ class KassabonData:
                 return False
             await self._async_save()
             return True
+
+
+def _strip(product: dict[str, Any]) -> dict[str, Any]:
+    keys = ("id", "title", "brand", "size", "price", "image", "score")
+    return {k: product.get(k) for k in keys}
 
 
 type KassabonConfigEntry = ConfigEntry[KassabonData]
@@ -143,6 +231,8 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     add_extra_js_url(hass, f"{CARD_URL}?v={integration.version}")
     websocket_api.async_register_command(hass, ws_products)
     websocket_api.async_register_command(hass, ws_set_variable)
+    websocket_api.async_register_command(hass, ws_set_product)
+    websocket_api.async_register_command(hass, ws_search)
 
     async def import_file(call: ServiceCall) -> ServiceResponse:
         path = call.data["path"]
@@ -187,9 +277,11 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
 
 async def async_setup_entry(hass: HomeAssistant, entry: KassabonConfigEntry) -> bool:
     data = KassabonData(hass)
+    data.entry = entry
     await data.async_load()
     entry.runtime_data = data
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+    data.schedule_lookups()
     return True
 
 
@@ -259,3 +351,47 @@ async def ws_set_variable(hass: HomeAssistant, connection: websocket_api.ActiveC
         connection.send_error(msg["id"], "not_loaded", str(err))
         return
     connection.send_result(msg["id"])
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): f"{DOMAIN}/set_product",
+        vol.Required("key"): str,
+        vol.Optional("variable"): vol.Any(None, bool),
+        vol.Optional("no_split"): vol.Any(None, bool),
+        vol.Optional("match"): vol.Any(None, dict),
+        vol.Optional("status"): vol.In(["confirmed", "skipped", "reset"]),
+    }
+)
+@websocket_api.async_response
+async def ws_set_product(hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict) -> None:
+    changes = {k: msg[k] for k in ("variable", "no_split", "match", "status") if k in msg}
+    try:
+        await _get(hass).async_set_product(msg["key"], changes)
+    except HomeAssistantError as err:
+        connection.send_error(msg["id"], "not_loaded", str(err))
+        return
+    connection.send_result(msg["id"])
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): f"{DOMAIN}/search",
+        vol.Required("query"): str,
+        vol.Optional("key"): str,
+    }
+)
+@websocket_api.async_response
+async def ws_search(hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict) -> None:
+    try:
+        kassabon = _get(hass)
+        target, short = None, msg["query"]
+        if key := msg.get("key"):
+            product = prices.build_products(kassabon.data).get(key)
+            if product:
+                target, short = product.latest.price, product.name
+        ranked = await kassabon.async_find(short, target, query=msg["query"])
+    except (HomeAssistantError, AhSearchError) as err:
+        connection.send_error(msg["id"], "search_failed", str(err))
+        return
+    connection.send_result(msg["id"], {"results": [_strip(r) for r in ranked[:10]]})

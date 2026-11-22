@@ -22,6 +22,25 @@ def fake_pdf_text():
     with patch("custom_components.ah_kassabon.parser.pdf_to_text", side_effect=fake):
         yield
 
+FAKE_AH = {
+    "ah spaghetti": [{"id": 11, "title": "AH Spaghetti", "brand": "AH", "size": "500 g", "price": 0.99, "image": None}],
+    "ah pindakaas": [
+        {"id": 21, "title": "AH Pindakaas naturel", "brand": "AH", "size": "350 g", "price": 2.49, "image": None},
+        {"id": 22, "title": "AH Pindakaas met stukjes", "brand": "AH", "size": "350 g", "price": 2.49, "image": None},
+    ],
+}
+
+
+@pytest.fixture(autouse=True)
+def fake_ah_search():
+    """No network in tests: answer AH searches from a made-up table."""
+    async def fake(self, query, size=10):
+        return list(FAKE_AH.get(query, []))
+    with patch("custom_components.ah_kassabon.ah_search.AhSearch.search", fake), \
+         patch("custom_components.ah_kassabon.asyncio.sleep", return_value=None):
+        yield
+
+
 async def _setup(hass):
     entry = MockConfigEntry(domain="ah_kassabon", title="AH Kassabon")
     entry.add_to_hass(hass)
@@ -83,3 +102,51 @@ async def test_unauthenticated_upload_rejected(hass, hass_client_no_auth):
     resp = await client.post("/api/ah_kassabon/upload", data={"file": "x"})
     assert resp.status == 401
 
+
+
+async def test_name_lookup_and_confirm(hass, hass_client, hass_ws_client):
+    await async_setup_component(hass, "http", {})
+    await _setup(hass)
+    client = await hass_client()
+    form = aiohttp.FormData(); form.add_field("file", PDF, filename="bon.pdf", content_type="application/pdf")
+    assert (await client.post("/api/ah_kassabon/upload", data=form)).status == 200
+    await hass.async_block_till_done(wait_background_tasks=True)
+
+    ws = await hass_ws_client(hass)
+    await ws.send_json({"id": 1, "type": "ah_kassabon/products"})
+    products = {p["key"]: p for p in (await ws.receive_json())["result"]["products"]}
+    assert products["AH SPAGHETTI"]["match_status"] == "auto"
+    assert products["AH SPAGHETTI"]["title"] == "AH Spaghetti"
+    assert products["AH PINDAKAAS"]["match_status"] == "pending"
+    assert len(products["AH PINDAKAAS"]["candidates"]) == 2
+    assert products["COLA ZERO"]["match_status"] == "none"
+
+    await ws.send_json({"id": 2, "type": "ah_kassabon/search", "query": "ah pindakaas", "key": "AH PINDAKAAS"})
+    msg = await ws.receive_json()
+    assert msg["success"] and len(msg["result"]["results"]) == 2
+    pick = msg["result"]["results"][1]
+
+    await ws.send_json({"id": 3, "type": "ah_kassabon/set_product", "key": "AH PINDAKAAS", "match": pick})
+    assert (await ws.receive_json())["success"]
+    await ws.send_json({"id": 4, "type": "ah_kassabon/set_product", "key": "COLA ZERO", "status": "skipped"})
+    assert (await ws.receive_json())["success"]
+    await ws.send_json({"id": 5, "type": "ah_kassabon/set_product", "key": "AH SPAGHETTI", "status": "confirmed"})
+    assert (await ws.receive_json())["success"]
+
+    await ws.send_json({"id": 6, "type": "ah_kassabon/products"})
+    products = {p["key"]: p for p in (await ws.receive_json())["result"]["products"]}
+    assert products["AH PINDAKAAS"]["match_status"] == "confirmed"
+    assert products["AH PINDAKAAS"]["title"] == pick["title"]
+    assert products["COLA ZERO"]["match_status"] == "skipped"
+    assert products["AH SPAGHETTI"]["match_status"] == "confirmed"
+
+
+async def test_search_unavailable_is_reported(hass, hass_ws_client):
+    from custom_components.ah_kassabon.ah_search import AhSearchError
+    await async_setup_component(hass, "http", {})
+    await _setup(hass)
+    ws = await hass_ws_client(hass)
+    with patch("custom_components.ah_kassabon.ah_search.AhSearch.search", side_effect=AhSearchError("weg")):
+        await ws.send_json({"id": 1, "type": "ah_kassabon/search", "query": "melk"})
+        msg = await ws.receive_json()
+    assert not msg["success"] and msg["error"]["code"] == "search_failed"

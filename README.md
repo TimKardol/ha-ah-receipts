@@ -20,7 +20,13 @@ Everything stays in your own Home Assistant; nothing is sent anywhere.
 - Product lines on an AH receipt show the regular shelf price; Bonus discounts are separate lines, so Bonus does not count as a price change.
 - Deposit lines (`+STATIEGELD`) are ignored.
 - Products sold by weight (meat, cheese) have a different price every time. They are marked **wisselend gewicht** and left out of the comparison when the same name has two prices on one receipt, or when the price changed on three purchases in a row. You can switch this per product on the card.
-- AH cuts names to about 12 characters, so two variants with the same short name count as one product.
+- AH cuts names to about 12 characters. When the price under one short name jumps by more than 30%, it is treated as a different product (shown as "1 van 2"); a **Samenvoegen** button on the card merges them back.
+
+## Full product names
+
+Receipts only have short names ("AH BAKAARDAP"). The integration looks each one up in AH's public product search, the same anonymous search the AH app uses without logging in, and matches on name and price. A clear match is used straight away (you can still correct it); otherwise the card shows a few candidates under **Controleren** to pick from, search again, or skip.
+
+Only the short product name is sent to AH. No receipts, account or personal data leave Home Assistant. This search is not an official API and AH can change it; if it stops working, price tracking keeps working with the short names.
 
 ## Install
 

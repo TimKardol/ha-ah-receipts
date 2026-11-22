@@ -61,6 +61,7 @@ class _Base(SensorEntity):
 def _short(change: dict[str, Any]) -> dict[str, Any]:
     return {
         "product": change["name"],
+        "titel": change.get("title"),
         "van": change["first_price"],
         "naar": change["price"],
         "verschil": change["diff"],

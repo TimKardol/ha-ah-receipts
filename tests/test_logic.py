@@ -82,3 +82,29 @@ def test_missing_items_reported():
 
 def test_footer_time_when_no_card_payment():
     assert parser.parse_text(RECEIPT_JAN).when == datetime(2026, 1, 31, 10, 15)
+
+
+def test_price_jump_splits_variants_and_merge_undoes_it():
+    data, _ = _store(
+        RECEIPT_JAN,
+        later_receipt(7, {"0,99": "1,89"}),  # spaghetti jumps 91%: another product
+        later_receipt(14, {"0,99": "1,05"}),  # back near the first price
+    )
+    products = prices.build_products(data)
+    assert products["AH SPAGHETTI"].variants == 2
+    assert [o.price for o in products["AH SPAGHETTI"].observations] == [0.99, 1.05]
+    assert [o.price for o in products["AH SPAGHETTI#2"].observations] == [1.89]
+    assert products["AH SPAGHETTI#2"].as_dict()["key"] == "AH SPAGHETTI#2"
+
+    data["overrides"]["AH SPAGHETTI"] = {"no_split": True}
+    products = prices.build_products(data)
+    assert "AH SPAGHETTI#2" not in products
+    assert len(products["AH SPAGHETTI"].observations) == 3
+
+
+def test_name_info_reaches_product():
+    data, _ = _store(RECEIPT_JAN)
+    data["names"] = {"AH SPAGHETTI": {"status": "auto", "match": {"id": 7, "title": "AH Spaghetti", "image": "x"}}}
+    info = prices.build_products(data)["AH SPAGHETTI"].as_dict()
+    assert info["title"] == "AH Spaghetti" and info["match_status"] == "auto" and info["product_id"] == 7
+    assert prices.build_products(data)["AH PINDAKAAS"].as_dict()["match_status"] == "new"
