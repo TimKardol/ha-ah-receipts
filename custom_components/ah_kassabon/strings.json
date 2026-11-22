@@ -4,10 +4,22 @@
       "user": {
         "title": "AH Kassabon",
         "description": "Read Albert Heijn receipt PDFs from the AH app and track which products get more expensive."
+      },
+      "reauth_confirm": {
+        "title": "Log in to AH again",
+        "description": "The AH login has expired.\n\n1. Open [the AH login page]({url}) on a computer, in Chrome or Edge.\n2. Press F12, open the **Console** tab, and log in with your AH account.\n3. After logging in, the page tries to open the AH app. The console then shows an error with a link that starts with `appie://login-exit?code=`. Copy that whole link (or just the code) and paste it below. The code only works for a few minutes.\n\nHome Assistant then fetches the account's receipts (last 12 months, then every 6 hours) and knows the exact product on every line. It never sees your password; it keeps a login token, which **Log out** removes.",
+        "data": {
+          "code": "Link or code"
+        }
       }
     },
     "abort": {
-      "single_instance_allowed": "AH Kassabon is already set up."
+      "single_instance_allowed": "AH Kassabon is already set up.",
+      "reauth_successful": "Logged in to AH again."
+    },
+    "error": {
+      "invalid_code": "AH did not accept this code. Codes expire quickly: log in again and paste the new link.",
+      "cannot_connect": "Could not reach AH. Try again later."
     }
   },
   "entity": {
@@ -57,6 +69,36 @@
           "description": "ID such as 202601311015-1234."
         }
       }
+    },
+    "sync_account": {
+      "name": "Fetch receipts from AH account",
+      "description": "Fetches new receipts from the logged-in AH account and links each line to its AH product."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "AH",
+        "menu_options": {
+          "login": "Log in again",
+          "logout": "Log out"
+        }
+      },
+      "login": {
+        "title": "Log in to AH (optional)",
+        "description": "1. Open [the AH login page]({url}) on a computer, in Chrome or Edge.\n2. Press F12, open the **Console** tab, and log in with your AH account.\n3. After logging in, the page tries to open the AH app. The console then shows an error with a link that starts with `appie://login-exit?code=`. Copy that whole link (or just the code) and paste it below. The code only works for a few minutes.\n\nHome Assistant then fetches the account's receipts (last 12 months, then every 6 hours) and knows the exact product on every line. It never sees your password; it keeps a login token, which **Log out** removes.",
+        "data": {
+          "code": "Link or code"
+        }
+      },
+      "logout": {
+        "title": "Log out of AH",
+        "description": "Removes the AH login token. Receipts already imported and product names stay."
+      }
+    },
+    "error": {
+      "invalid_code": "AH did not accept this code. Codes expire quickly: log in again and paste the new link.",
+      "cannot_connect": "Could not reach AH. Try again later."
     }
   }
 }

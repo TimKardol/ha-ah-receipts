@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from datetime import datetime, timedelta
 import logging
 from pathlib import Path
 from typing import Any
@@ -20,13 +21,14 @@ from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 import homeassistant.helpers.config_validation as cv
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.dispatcher import async_dispatcher_send
+from homeassistant.helpers.event import async_track_time_interval
 from homeassistant.helpers.storage import Store
 from homeassistant.helpers.typing import ConfigType
 from homeassistant.loader import async_get_integration
 from homeassistant.util import dt as dt_util
 
 from . import matching, prices
-from .ah_search import AhSearch, AhSearchError
+from .ah_search import AhAccount, AhAuthError, AhSearch, AhSearchError
 from .const import (
     CARD_URL,
     DOMAIN,
@@ -41,6 +43,9 @@ from .parser import Receipt, ReceiptParseError, parse_pdf
 _LOGGER = logging.getLogger(__name__)
 PLATFORMS = [Platform.SENSOR]
 MAX_UPLOAD_BYTES = 5 * 1024 * 1024
+SYNC_INTERVAL = timedelta(hours=6)
+SYNC_DAYS = 365  # how far back the first account sync goes
+NOTIFY_DAYS = 2  # receipts older than this are imported without a notification
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 
 
@@ -55,11 +60,15 @@ class KassabonData:
         self._lookup_lock = asyncio.Lock()
         self.search = AhSearch(async_get_clientsession(hass))
         self.entry: ConfigEntry | None = None
+        self.account: AhAccount | None = None
+        self.account_error: str | None = None
+        self._sync_lock = asyncio.Lock()
 
     async def async_load(self) -> None:
         stored = await self._store.async_load()
         if stored:
             self.data = {"receipts": {}, "overrides": {}, "names": {}, **stored}
+        self.data.setdefault("account", {"receipts": {}, "last_sync": None})
 
     # --- full product names via AH search ---------------------------------
 
@@ -146,7 +155,9 @@ class KassabonData:
         await self._store.async_save(self.data)
         async_dispatcher_send(self.hass, SIGNAL_UPDATED)
 
-    async def async_import_pdf(self, data: bytes, filename: str | None = None) -> dict[str, Any]:
+    async def async_import_pdf(
+        self, data: bytes, filename: str | None = None, notify: bool = True, lookups: bool = True
+    ) -> dict[str, Any]:
         """Parse a receipt PDF, store it and compare its prices."""
         try:
             receipt: Receipt = await self.hass.async_add_executor_job(parse_pdf, data)
@@ -182,10 +193,138 @@ class KassabonData:
                 rid,
                 receipt.missing_items,
             )
-        if not duplicate:
+        if not duplicate and notify:
             self.hass.bus.async_fire(EVENT_IMPORTED, result)
+        if not duplicate and lookups:
             self.schedule_lookups()
         return result
+
+    # --- optional AH account ------------------------------------------------
+
+    @callback
+    def schedule_sync(self) -> None:
+        if self.entry is not None and self.account is not None:
+            self.entry.async_create_background_task(self.hass, self._async_sync_quietly(), f"{DOMAIN}_sync")
+
+    async def _async_sync_quietly(self) -> None:
+        try:
+            await self.async_sync_account()
+        except HomeAssistantError as err:
+            _LOGGER.warning("Bonnen ophalen uit AH-account lukt niet: %s", err)
+
+    async def async_sync_account(self) -> dict[str, Any]:
+        """Fetch new receipts from the AH account and link each line to its AH product."""
+        if self.account is None:
+            raise HomeAssistantError("Niet ingelogd bij AH (Instellingen → AH Kassabon → Configureren)")
+        async with self._sync_lock:
+            try:
+                result = await self._async_sync()
+            except AhAuthError as err:
+                self.account_error = str(err)
+                async_dispatcher_send(self.hass, SIGNAL_UPDATED)
+                if self.entry is not None:
+                    self.entry.async_start_reauth(self.hass)
+                raise HomeAssistantError(str(err)) from err
+            except AhSearchError as err:
+                self.account_error = str(err)
+                async_dispatcher_send(self.hass, SIGNAL_UPDATED)
+                raise HomeAssistantError(str(err)) from err
+            self.account_error = None
+            return result
+
+    async def _async_sync(self) -> dict[str, Any]:
+        assert self.account is not None
+        state = self.data["account"]
+        seen: dict[str, str | None] = state.setdefault("receipts", {})
+        cutoff = dt_util.now().replace(tzinfo=None) - timedelta(days=SYNC_DAYS)
+        rows: list[dict[str, Any]] = []
+        offset = 0
+        while offset < 1000:
+            page = await self.account.receipts(offset, 50)
+            rows += page
+            oldest = _local_time(page[-1]["when"]) if page else None
+            if len(page) < 50 or (oldest and oldest < cutoff):
+                break
+            offset += 50
+
+        new = linked = 0
+        for row in reversed(rows):  # oldest first
+            if row["id"] in seen:
+                continue
+            when = _local_time(row["when"])
+            if when and when < cutoff:
+                continue
+            rid = self._find_receipt(when, row.get("total"))
+            if rid is None:
+                pdf = await self.account.receipt_pdf(row["id"])
+                recent = when is None or when > dt_util.now().replace(tzinfo=None) - timedelta(days=NOTIFY_DAYS)
+                result = await self.async_import_pdf(pdf, "AH-account", notify=recent, lookups=False)
+                if not result.get("ok"):
+                    _LOGGER.warning("Bon uit AH-account niet gelezen: %s", result.get("error"))
+                    seen[row["id"]] = None
+                    continue
+                rid = result["receipt_id"]
+                new += 0 if result.get("duplicate") else 1
+            lines = await self.account.receipt_products(row["id"])
+            webshop = await self.account.webshop_ids([line["pos_id"] for line in lines])
+            async with self._lock:
+                self.data["receipts"][rid]["ids"] = [
+                    {"name": matching.receipt_name(line["name"]), "price": _unit(line), "id": webshop[line["pos_id"]]}
+                    for line in lines
+                    if line["pos_id"] in webshop
+                ]
+                seen[row["id"]] = rid
+            linked += 1
+            if linked % 5 == 0:
+                await self._async_save()
+            await asyncio.sleep(0.5)
+
+        named = await self._async_apply_account_ids()
+        state["last_sync"] = dt_util.utcnow().isoformat()
+        await self._async_save()
+        self.schedule_lookups()
+        return {"new_receipts": new, "linked_receipts": linked, "named_products": named}
+
+    def _find_receipt(self, when: datetime | None, total: float | None) -> str | None:
+        """A receipt already uploaded by hand: same total, within two minutes."""
+        if when is None or total is None:
+            return None
+        for rid, receipt in self.data["receipts"].items():
+            if receipt.get("total") is None or abs(receipt["total"] - total) > 0.005:
+                continue
+            if abs((datetime.fromisoformat(receipt["when"]) - when).total_seconds()) <= 120:
+                return rid
+        return None
+
+    async def _async_apply_account_ids(self) -> int:
+        products = prices.build_products(self.data)
+        wanted = matching.account_ids(products, self.data["receipts"])
+        names = self.data["names"]
+        todo = {
+            key: pid
+            for key, pid in wanted.items()
+            if names.get(key, {}).get("status") != "confirmed"
+            and not (names.get(key, {}).get("status") == "account" and names[key].get("match", {}).get("id") == pid)
+        }
+        if not todo:
+            return 0
+        try:
+            info = await self.search.products_by_ids(sorted(set(todo.values())))
+        except AhSearchError as err:
+            _LOGGER.warning("AH-productgegevens ophalen lukt nu niet: %s", err)
+            return 0
+        count = 0
+        async with self._lock:
+            for key, pid in todo.items():
+                if pid in info:
+                    names[key] = {"status": "account", "match": _strip(info[pid])}
+                    count += 1
+        return count
+
+    @callback
+    def save_tokens(self, tokens: dict[str, Any]) -> None:
+        if self.entry is not None:
+            self.hass.config_entries.async_update_entry(self.entry, data={**self.entry.data, "account": tokens})
 
     async def async_set_variable(self, product: str, variable: bool | None) -> None:
         async with self._lock:
@@ -205,6 +344,26 @@ class KassabonData:
 
 
 MIN_CANDIDATE_SCORE = 40
+
+
+def _local_time(value: str | None) -> datetime | None:
+    """AH timestamps as naive local time, like the stored receipts."""
+    if not value:
+        return None
+    parsed = dt_util.parse_datetime(value)
+    if parsed is None:
+        return None
+    if parsed.tzinfo is not None:
+        parsed = dt_util.as_local(parsed).replace(tzinfo=None)
+    return parsed
+
+
+def _unit(line: dict[str, Any]) -> float | None:
+    if line.get("price") is not None:
+        return round(float(line["price"]), 2)
+    if line.get("amount") is not None and line.get("qty"):
+        return round(float(line["amount"]) / float(line["qty"]), 2)
+    return None
 
 
 def _strip(product: dict[str, Any]) -> dict[str, Any]:
@@ -240,6 +399,7 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     websocket_api.async_register_command(hass, ws_set_variable)
     websocket_api.async_register_command(hass, ws_set_product)
     websocket_api.async_register_command(hass, ws_search)
+    websocket_api.async_register_command(hass, ws_sync)
 
     async def import_file(call: ServiceCall) -> ServiceResponse:
         path = call.data["path"]
@@ -273,6 +433,12 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
             {vol.Required("product"): cv.string, vol.Optional("variable"): vol.Any(None, cv.boolean)}
         ),
     )
+    async def sync_account(call: ServiceCall) -> ServiceResponse:
+        return await _get(hass).async_sync_account()
+
+    hass.services.async_register(
+        DOMAIN, "sync_account", sync_account, supports_response=SupportsResponse.OPTIONAL
+    )
     hass.services.async_register(
         DOMAIN,
         "remove_receipt",
@@ -287,8 +453,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: KassabonConfigEntry) -> 
     data.entry = entry
     await data.async_load()
     entry.runtime_data = data
+    if tokens := entry.data.get("account"):
+        data.account = AhAccount(async_get_clientsession(hass), tokens, data.save_tokens)
+        entry.async_on_unload(
+            async_track_time_interval(hass, lambda _now: data.schedule_sync(), SYNC_INTERVAL)
+        )
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     data.schedule_lookups()
+    data.schedule_sync()
     return True
 
 
@@ -340,7 +512,23 @@ async def ws_products(hass: HomeAssistant, connection: websocket_api.ActiveConne
         {"id": rid, "when": r["when"], "store": r.get("store"), "total": r.get("total"), "items": len(r["items"])}
         for rid, r in sorted(data["receipts"].items(), key=lambda kv: kv[1]["when"], reverse=True)
     ]
-    connection.send_result(msg["id"], {"products": products, "receipts": receipts})
+    account = {
+        "connected": kassabon.account is not None,
+        "error": kassabon.account_error,
+        "last_sync": data["account"].get("last_sync"),
+    }
+    connection.send_result(msg["id"], {"products": products, "receipts": receipts, "account": account})
+
+
+@websocket_api.websocket_command({vol.Required("type"): f"{DOMAIN}/sync"})
+@websocket_api.async_response
+async def ws_sync(hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict) -> None:
+    try:
+        result = await _get(hass).async_sync_account()
+    except HomeAssistantError as err:
+        connection.send_error(msg["id"], "sync_failed", str(err))
+        return
+    connection.send_result(msg["id"], result)
 
 
 @websocket_api.websocket_command(

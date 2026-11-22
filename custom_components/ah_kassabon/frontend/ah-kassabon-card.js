@@ -7,7 +7,7 @@
  *   limit: 10                       # rows before "Toon alles"
  */
 const DOMAIN = 'ah_kassabon';
-const VERSION = '0.2.1';
+const VERSION = '0.3.0';
 
 const CSS = `
 :host {
@@ -39,6 +39,10 @@ button { font: inherit; color: inherit; border: 0; cursor: pointer; }
 .upload:hover { background: var(--akc-active); }
 .upload[disabled] { opacity: .6; cursor: progress; }
 .upload ha-icon { --mdc-icon-size: 18px; }
+.sync { flex: none; width: 36px; height: 36px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; background: var(--akc-hi); }
+.sync:hover { background: var(--akc-active); }
+.sync[disabled] { opacity: .6; cursor: progress; }
+.sync ha-icon { --mdc-icon-size: 18px; }
 .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 14px; }
 .stat { background: var(--akc-hi); border-radius: var(--thuis-radius-control, 12px); padding: 10px 12px; min-width: 0; }
 .stat .v { font-family: var(--akc-mono); font-size: 18px; font-weight: 600; }
@@ -187,6 +191,21 @@ class AhKassabonCard extends HTMLElement {
     await this._load();
   }
 
+  async _sync() {
+    this._syncing = true; this._banner = { html: 'Bonnen ophalen uit je AH-account… De eerste keer kan dit een paar minuten duren.' }; this._render();
+    try {
+      const r = await this._ws({ type: `${DOMAIN}/sync` });
+      const bits = [r.new_receipts ? `<b>${r.new_receipts} nieuwe ${r.new_receipts === 1 ? 'bon' : 'bonnen'}</b> opgehaald` : 'Geen nieuwe bonnen'];
+      if (r.named_products) bits.push(`${r.named_products} producten herkend via je AH-account`);
+      this._banner = { html: bits.join(', ') + '.' };
+    } catch (e) {
+      this._banner = { err: true, html: `Ophalen mislukt: ${esc(e.message)}` };
+    }
+    this._syncing = false;
+    this._polls = 0;
+    await this._load();
+  }
+
   _describe(results) {
     const missing = (r) => (r.missing_items ? ` <span class="up">Let op: ${r.missing_items} product${r.missing_items === 1 ? '' : 'en'} niet herkend.</span>` : '');
     const parts = results.map((r) => {
@@ -247,7 +266,7 @@ class AhKassabonCard extends HTMLElement {
     const key = p.key;
     let html = '<div class="section">Product</div>';
     if (p.title && this._picking !== key) {
-      html += `<div class="match">${this._thumb(p.image)}<div class="n">${esc(p.title)}<small>${esc(p.size || '')}${p.match_status === 'auto' ? ' · automatisch gekozen' : ''}</small></div></div>
+      html += `<div class="match">${this._thumb(p.image)}<div class="n">${esc(p.title)}<small>${esc(p.size || '')}${p.match_status === 'auto' ? ' · automatisch gekozen' : p.match_status === 'account' ? ' · via je AH-account' : ''}</small></div></div>
         <div class="actions">
           ${p.match_status === 'auto' ? `<button class="btn primary" data-confirm="${esc(key)}">Klopt</button>` : ''}
           <button class="btn" data-change="${esc(key)}">Ander product</button>
@@ -282,6 +301,7 @@ class AhKassabonCard extends HTMLElement {
     const up = tracked.filter((p) => p.diff > 0).length;
     const down = tracked.filter((p) => p.diff < 0).length;
     const check = products.filter(needsCheck).length;
+    const account = (data && data.account) || {};
     const avg = tracked.length ? tracked.reduce((s, p) => s + (p.pct || 0), 0) / tracked.length : null;
     const oldest = receipts.length ? receipts[receipts.length - 1].when : null;
     const sub = receipts.length
@@ -327,6 +347,7 @@ class AhKassabonCard extends HTMLElement {
         <div class="head">
           <div class="tile"><ha-icon icon="mdi:receipt-text-outline"></ha-icon></div>
           <div class="titles"><div class="title">${esc(c.title)}</div><div class="sub">${sub}</div></div>
+          ${account.connected ? `<button class="sync" title="Bonnen ophalen uit AH-account" ${this._syncing ? 'disabled' : ''}><ha-icon icon="${this._syncing ? 'mdi:loading' : 'mdi:cloud-download-outline'}"></ha-icon></button>` : ''}
           <button class="upload" ${this._busy ? 'disabled' : ''}><ha-icon icon="${this._busy ? 'mdi:loading' : 'mdi:plus'}"></ha-icon>${this._busy ? 'Inlezen…' : 'Bon toevoegen'}</button>
           <input type="file" accept="application/pdf,.pdf" multiple>
         </div>
@@ -335,6 +356,7 @@ class AhKassabonCard extends HTMLElement {
           <div class="stat"><div class="v ${up ? 'up' : ''}">${up}</div><div class="l">duurder</div></div>
           <div class="stat"><div class="v ${down ? 'down' : ''}">${down}</div><div class="l">goedkoper</div></div>
         </div>` : ''}
+        ${account.error && !this._banner ? `<div class="banner err">AH-login: ${esc(account.error)}. Log opnieuw in via Instellingen → Apparaten &amp; diensten → AH Kassabon.</div>` : ''}
         ${this._banner ? `<div class="banner ${this._banner.err ? 'err' : ''}">${this._banner.html}</div>` : ''}
         ${receipts.length ? `<div class="chips">${filters.map(([k, l, n]) => `<button class="chip ${this._filter === k ? 'on' : ''}" data-f="${k}">${l}${n ? `<span class="n">${n}</span>` : ''}</button>`).join('')}</div>` : ''}
         <div class="list">${list}</div>
@@ -346,6 +368,7 @@ class AhKassabonCard extends HTMLElement {
     const input = root.querySelector('input[type=file]');
     root.querySelector('.upload').addEventListener('click', () => input.click());
     input.addEventListener('change', () => this._upload([...input.files]));
+    on('.sync', () => this._sync());
     on('.chip', (b) => { this._filter = b.dataset.f; this._showAll = false; this._open = null; this._picking = null; this._render(); });
     on('.row', (r) => { this._open = this._open === r.dataset.key ? null : r.dataset.key; this._picking = null; this._results = null; this._query = ''; this._render(); });
     on('.more', () => { this._showAll = true; this._render(); });

@@ -28,6 +28,14 @@ Receipts only have short names ("AH BAKAARDAP"). The integration looks each one 
 
 Only the short product name is sent to AH. No receipts, account or personal data leave Home Assistant. This search is not an official API and AH can change it; if it stops working, price tracking keeps working with the short names.
 
+## Optional: log in to your AH account
+
+With a login, Home Assistant fetches the receipts in your AH account itself (the last 12 months, then every 6 hours) and AH tells it the exact product on every line, so there is nothing to pick. Receipts you already uploaded are recognised and not imported twice. Older receipts are imported without a notification.
+
+**Settings → Devices & services → AH Kassabon → Configure**, then follow the steps: open the AH login page on a computer (Chrome or Edge), press F12 → Console, log in, and paste the `appie://login-exit?code=…` link that appears in the console. Home Assistant never sees your password; it keeps a login token in its config entry. **Configure → Log out** removes it. When the login expires, Home Assistant asks you to log in again.
+
+This uses the AH app's own, unofficial API. AH can change or block it; uploading PDFs and the public search keep working either way. Action `ah_kassabon.sync_account` fetches new receipts on demand; the card shows a download button for it.
+
 ## Install
 
 Marketplace (HACS) → custom repository → this repo, category Integration. Restart, then **Settings → Devices & services → Add integration → AH Kassabon**.

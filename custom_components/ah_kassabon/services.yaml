@@ -22,3 +22,5 @@ remove_receipt:
       example: 202601311015-1234
       selector:
         text:
+
+sync_account:

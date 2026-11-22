@@ -56,3 +56,19 @@ def test_same_product_listed_twice_is_one():
         {"id": 3, "title": "AH Stokbrood volkoren", "brand": "AH", "size": "per stuk", "price": 1.49},
     ])
     assert [c["id"] for c in ranked] == [1, 3]
+
+
+def test_code_from_input():
+    from custom_components.ah_kassabon.ah_search import code_from_input
+    assert code_from_input("appie://login-exit?code=AbC-123&foo=1") == "AbC-123"
+    assert code_from_input("  AbC-123 ") == "AbC-123"
+
+
+def test_account_ids_keep_same_name_products_apart():
+    from custom_components.ah_kassabon import prices
+    def receipt(day, unit, pid):
+        return {"when": f"2026-01-{day:02d}T10:00:00", "items": [{"name": "AH BROOD", "qty": 1, "unit": unit, "bonus": False}],
+                "ids": [{"name": "AH BROOD", "price": unit, "id": pid}]}
+    receipts = {"r1": receipt(3, 2.79, 1), "r2": receipt(10, 1.49, 2), "r3": receipt(17, 2.79, 1)}
+    products = prices.build_products({"receipts": receipts, "overrides": {}})
+    assert matching.account_ids(products, receipts) == {"AH BROOD": 1, "AH BROOD#2": 2}

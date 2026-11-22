@@ -4,10 +4,22 @@
       "user": {
         "title": "AH Kassabon",
         "description": "Lees AH-kassabonnen (PDF uit de AH-app) in en volg welke producten duurder worden."
+      },
+      "reauth_confirm": {
+        "title": "Opnieuw inloggen bij AH",
+        "description": "De AH-login is verlopen.\n\n1. Open [de inlogpagina van AH]({url}) op een computer, in Chrome of Edge.\n2. Druk op F12, open het tabblad **Console** en log in met je AH-account.\n3. Na het inloggen probeert de pagina de AH-app te openen. In de console staat dan een foutmelding met een link die begint met `appie://login-exit?code=`. Kopieer die hele link (of alleen de code) en plak hem hieronder. De code werkt maar een paar minuten.\n\nHome Assistant haalt daarna de bonnen uit het account op (laatste 12 maanden, daarna elke 6 uur) en weet per regel precies welk product het is. Je wachtwoord ziet Home Assistant nooit; het bewaart een login-token, dat **Uitloggen** weer verwijdert.",
+        "data": {
+          "code": "Link of code"
+        }
       }
     },
     "abort": {
-      "single_instance_allowed": "AH Kassabon is al ingesteld."
+      "single_instance_allowed": "AH Kassabon is al ingesteld.",
+      "reauth_successful": "Opnieuw ingelogd bij AH."
+    },
+    "error": {
+      "invalid_code": "AH accepteerde deze code niet. Codes verlopen snel: log opnieuw in en plak de nieuwe link.",
+      "cannot_connect": "AH is niet bereikbaar. Probeer het later opnieuw."
     }
   },
   "entity": {
@@ -57,6 +69,36 @@
           "description": "ID zoals 202601311015-1234."
         }
       }
+    },
+    "sync_account": {
+      "name": "Bonnen ophalen uit AH-account",
+      "description": "Haalt nieuwe bonnen op uit het ingelogde AH-account en koppelt elke regel aan het AH-product."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "AH",
+        "menu_options": {
+          "login": "Opnieuw inloggen",
+          "logout": "Uitloggen"
+        }
+      },
+      "login": {
+        "title": "Inloggen bij AH (optioneel)",
+        "description": "1. Open [de inlogpagina van AH]({url}) op een computer, in Chrome of Edge.\n2. Druk op F12, open het tabblad **Console** en log in met je AH-account.\n3. Na het inloggen probeert de pagina de AH-app te openen. In de console staat dan een foutmelding met een link die begint met `appie://login-exit?code=`. Kopieer die hele link (of alleen de code) en plak hem hieronder. De code werkt maar een paar minuten.\n\nHome Assistant haalt daarna de bonnen uit het account op (laatste 12 maanden, daarna elke 6 uur) en weet per regel precies welk product het is. Je wachtwoord ziet Home Assistant nooit; het bewaart een login-token, dat **Uitloggen** weer verwijdert.",
+        "data": {
+          "code": "Link of code"
+        }
+      },
+      "logout": {
+        "title": "Uitloggen bij AH",
+        "description": "Verwijdert het AH-login-token. Ingelezen bonnen en productnamen blijven bewaard."
+      }
+    },
+    "error": {
+      "invalid_code": "AH accepteerde deze code niet. Codes verlopen snel: log opnieuw in en plak de nieuwe link.",
+      "cannot_connect": "AH is niet bereikbaar. Probeer het later opnieuw."
     }
   }
 }
