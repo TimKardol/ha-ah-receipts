@@ -10,7 +10,8 @@ Everything stays in your own Home Assistant; nothing is sent anywhere.
 
 ## What you get
 
-- **Card** `custom:ah-kassabon-card` (loaded automatically): upload button, basket change, and lists of products that went up or down, with a price history per product.
+- **Card** `custom:ah-kassabon-card` (loaded automatically): upload button, basket change, and lists of products that went up or down, with a price history per product. Add `link: /boodschappen` to put a button on it that opens the full overview.
+- **Overview** `custom:ah-kassabon-overview`: a full-page version for its own dashboard (use a Panel view). Spend per month, the biggest risers, and a sortable, searchable table of every product with its first and current price.
 - **Sensors**: latest receipt (timestamp, total), number of products more expensive than when first seen (top 15 in attributes), and the average basket price change in %.
 - **Event** `ah_kassabon_imported` after every new receipt, with `increases` and `decreases`, for notifications.
 - **Actions**: `ah_kassabon.import_file` (a PDF already in HA, e.g. in `/media`), `ah_kassabon.set_variable` (mark a product as sold by weight), `ah_kassabon.remove_receipt`.
